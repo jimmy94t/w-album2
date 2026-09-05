@@ -1,0 +1,675 @@
+/* ============================================================
+   Our Story — 美式編輯版  版面與配色
+   ------------------------------------------------------------
+   ★ 想調翻頁手感：只要改 :root 的 --flip（和 body.thin 那份）。
+     --flip-ease 若要換曲線，@keyframes pageShadePC / pageShadeM
+     必須用同一條貝茲重新推算（那組數字是算出來的，不能手調）。
+   ★ 想換配色：改 :root 的色票即可，全站都讀這裡。
+   ============================================================ */
+
+:root{
+  /* ---- 紙與墨 ---- */
+  --paper:   #F5F0E8;
+  --paper-d: #EBE3D7;
+  --ink:     #211E1A;
+  --ink-2:   #6A6357;
+  --ink-3:   #9A9184;
+  --gold:    #A98A5B;
+  --accent:  var(--gold);      /* 每一章由 JS 覆寫成該章的色 */
+  --dark:    #16140F;
+
+  /* ---- 翻頁：單一真相 ---- */
+  --flip: 1.05s;
+  --flip-ease: cubic-bezier(.61,.04,.21,1);
+
+  /* ---- 頁面尺寸（JS 計算後寫入）---- */
+  --pw: 400px;
+  --ph: 560px;
+  --half: var(--pw);           /* 跨頁模式＝pw；單頁模式＝0 */
+}
+body.thin{
+  --flip: .62s;
+  --flip-ease: cubic-bezier(.38,.66,.32,1);
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0; background:var(--dark); color:var(--ink);
+  font-family:"Noto Serif TC", "Noto Serif CJK TC", "Songti TC", "PingFang TC", serif;
+  overflow:hidden; overscroll-behavior:none;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-font-smoothing:antialiased;
+}
+img{ display:block; max-width:100%; }
+button{ font-family:inherit; color:inherit; cursor:pointer; }
+
+/* 背景：深色劇場＋極淡暈影 */
+body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, rgba(255,246,232,.09), rgba(0,0,0,0) 62%),
+    linear-gradient(180deg,#191712 0%,#12100C 100%);
+}
+
+/* ============================================================
+   1. 舞台與書
+   ============================================================ */
+#stage{
+  position:fixed; inset:0; z-index:1;
+  display:flex; align-items:center; justify-content:center;
+  perspective:2400px; perspective-origin:50% 46%;
+}
+#book{
+  position:relative;
+  width:calc(var(--pw) + var(--half));
+  height:var(--ph);
+  transform-style:preserve-3d;
+  box-shadow:
+    0 2px 6px rgba(0,0,0,.34),
+    0 26px 60px rgba(0,0,0,.46),
+    0 60px 120px rgba(0,0,0,.34);
+  transition:transform .6s cubic-bezier(.4,.1,.2,1);
+}
+/* 封面／封底只有一頁，把書挪到畫面正中央 */
+body:not(.mobile).at-start #book{ transform:translateX(calc(var(--pw) / -2)); }
+body:not(.mobile).at-end   #book{ transform:translateX(calc(var(--pw) / 2)); }
+
+/* 書縫：靜態、永遠在最上面（preserve-3d 裡靠 translateZ，不是 z-index） */
+#spine{
+  position:absolute; top:0; left:calc(var(--pw) - 18px);
+  width:36px; height:var(--ph); z-index:900; pointer-events:none;
+  transform:translateZ(14px);
+  background:linear-gradient(90deg,
+    rgba(38,28,14,0) 0%, rgba(38,28,14,.06) 22%, rgba(38,28,14,.19) 45%,
+    rgba(38,28,14,.22) 50%, rgba(38,28,14,.19) 55%, rgba(38,28,14,.06) 78%,
+    rgba(38,28,14,0) 100%);
+}
+body.mobile #spine{ display:none; }
+
+/* ---- 葉（每片＝一張紙＝正反兩頁）---- */
+.leaf{
+  position:absolute; top:0; left:var(--half);
+  width:var(--pw); height:var(--ph);
+  transform-origin:left center; transform-style:preserve-3d;
+  transition:transform var(--flip) var(--flip-ease);
+}
+.leaf.flipped{ transform:rotateY(-180deg); }
+/* 單頁模式：翻過去的頁會停在書的左邊外側，收起來才不會露出半張 */
+body.mobile .leaf.flipped:not(.flipping){ visibility:hidden; }
+body.no-anim .leaf, body.no-anim #book{ transition:none !important; }
+
+.face{
+  position:absolute; inset:0; overflow:hidden;
+  backface-visibility:hidden; -webkit-backface-visibility:hidden;
+  background:var(--paper);
+  background-image:
+    radial-gradient(140% 100% at 50% 0%, rgba(255,255,255,.5), rgba(255,255,255,0) 60%);
+}
+/* ⚠️ 兩面之間一定要留一點 z 距離。
+   兩面完全共平面時，有些瀏覽器不會正確剔除背面（或深度排序抓鬮），
+   結果就是「左頁浮出前一頁的字、而且左右相反」。
+   1px 在 2400px 透視下只放大 0.04%，看不出來，但足以讓深度排序不再有歧義。 */
+.face.front{ transform:translateZ(1px); }
+.face.back { transform:rotateY(180deg) translateZ(1px); }
+
+/* 再保險一層：靜止時直接把背對我們的那一面收起來，
+   不倚賴 backface-visibility 是否被正確支援。 */
+.leaf:not(.flipping).flipped      .face.front{ visibility:hidden; }
+.leaf:not(.flipping):not(.flipped) .face.back { visibility:hidden; }
+
+/* 翻頁進行中也照角度切換（切換點見檔尾 faceSwap keyframes）。
+   .rev = 往回翻，正反面出現的順序相反。 */
+.leaf.flipping .face.front{ animation:faceKeepPC var(--flip) linear both; }
+.leaf.flipping .face.back { animation:faceShowPC var(--flip) linear both; }
+body.thin .leaf.flipping .face.front{ animation-name:faceKeepM; }
+body.thin .leaf.flipping .face.back { animation-name:faceShowM; }
+body     .leaf.flipping.rev .face.front{ animation-name:faceShowPC; }
+body     .leaf.flipping.rev .face.back { animation-name:faceKeepPC; }
+body.thin .leaf.flipping.rev .face.front{ animation-name:faceShowM; }
+body.thin .leaf.flipping.rev .face.back { animation-name:faceKeepM; }
+
+/* 靜態書縫暗邊（貼在每一頁靠書縫那一側） */
+.face::after{
+  content:""; position:absolute; top:0; bottom:0; width:8.5%;
+  pointer-events:none; z-index:6;
+}
+.face.front::after{ left:0;  background:linear-gradient(90deg,  rgba(34,24,10,.24), rgba(34,24,10,0)); }
+.face.back::after { right:0; background:linear-gradient(270deg, rgba(34,24,10,.24), rgba(34,24,10,0)); }
+body.mobile .face::after{ display:none; }
+
+/* 翻頁掃光（角度驅動，見檔尾 keyframes） */
+.face::before{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:7; opacity:0;
+}
+.face.front::before{ background:linear-gradient(90deg,  rgba(18,12,4,.46) 0%, rgba(18,12,4,0) 54%); }
+.face.back::before { background:linear-gradient(270deg, rgba(18,12,4,.46) 0%, rgba(18,12,4,0) 54%); }
+.leaf.flipping .face::before{ animation:pageShadePC var(--flip) linear both; }
+body.thin   .leaf.flipping .face::before{ animation-name:pageShadeM; }
+body.mobile .face::before{ display:none; }   /* 單頁沒有書縫，就不該有掃光 */
+
+/* ============================================================
+   2. 頁面共用
+   ============================================================ */
+.page{ position:absolute; inset:0; overflow:hidden; }
+
+/* 版心：頁眉（章名）與頁碼 */
+.rh{
+  position:absolute; top:calc(var(--ph)*.052); left:0; right:0; z-index:3;
+  text-align:center; font-size:calc(var(--ph)*.0155); font-weight:500;
+  letter-spacing:.42em; text-indent:.42em; color:var(--ink-3);
+}
+.folio{
+  position:absolute; bottom:calc(var(--ph)*.045); left:0; right:0; z-index:3;
+  text-align:center; font-size:calc(var(--ph)*.0155); color:var(--ink-3);
+  letter-spacing:.2em; font-family:"Cormorant Garamond",serif;
+}
+.folio::before,.folio::after{
+  content:""; position:absolute; top:50%; width:calc(var(--pw)*.06); height:1px;
+  background:currentColor; opacity:.45;
+}
+.folio::before{ left:calc(50% - var(--pw)*.115); }
+.folio::after { left:calc(50% + var(--pw)*.055); }
+
+/* 說明小字 */
+.cap{
+  font-size:calc(var(--ph)*.0215); line-height:2.15; color:var(--ink-2);
+  letter-spacing:.16em; text-indent:.16em; text-wrap:pretty; font-weight:400;
+}
+.cap.empty{ display:none; }
+.cap-rule{
+  display:block; width:calc(var(--pw)*.085); height:1px;
+  background:var(--accent); opacity:.75; margin-bottom:calc(var(--ph)*.022);
+}
+
+/* ============================================================
+   3. 版型：滿版
+   ============================================================ */
+.pg-full{ position:absolute; inset:0; }
+.pg-full img{ width:100%; height:100%; object-fit:cover; }
+.pg-full .veil{
+  position:absolute; left:0; right:0; bottom:0; height:42%; z-index:2;
+  background:linear-gradient(180deg, rgba(10,8,4,0) 0%, rgba(10,8,4,.52) 100%);
+}
+.pg-full .cap{
+  position:absolute; z-index:3; color:#F3ECDF;
+  left:calc(var(--pw)*.10); right:calc(var(--pw)*.14);
+  bottom:calc(var(--ph)*.075);
+  font-size:calc(var(--ph)*.024); letter-spacing:.2em; text-indent:.2em;
+  text-shadow:0 1px 12px rgba(0,0,0,.55);
+}
+.pg-full .cap-rule{ background:#E6D2AC; opacity:.9; }
+
+/* 跨頁：同一張照片被切成左右兩半 */
+.pg-span{ position:absolute; inset:0; overflow:hidden; }
+.pg-span img{
+  position:absolute; top:0; height:100%; width:200%; max-width:none;
+  object-fit:cover;
+}
+.pg-span.h-l img{ left:0; }
+.pg-span.h-r img{ right:0; }
+body.mobile .pg-span img{ width:135%; }
+body.mobile .pg-span.h-l img{ left:0; right:auto; }
+body.mobile .pg-span.h-r img{ right:0; left:auto; }
+.pg-span .veil{
+  position:absolute; left:0; right:0; bottom:0; height:38%; z-index:2;
+  background:linear-gradient(180deg, rgba(10,8,4,0), rgba(10,8,4,.46));
+}
+.pg-span .cap{
+  position:absolute; z-index:3; color:#F3ECDF;
+  left:calc(var(--pw)*.10); right:calc(var(--pw)*.14); bottom:calc(var(--ph)*.075);
+  font-size:calc(var(--ph)*.024); letter-spacing:.2em; text-indent:.2em;
+  text-shadow:0 1px 12px rgba(0,0,0,.55);
+}
+.pg-span .cap-rule{ background:#E6D2AC; opacity:.9; }
+
+/* ============================================================
+   4. 版型：留白（美式雜誌的招牌版面）
+   照片偏一邊、四周大留白，說明直排在旁
+   ============================================================ */
+.pg-air{
+  position:absolute; inset:0; background:var(--paper);
+  --shotw:.575;            /* 照片佔頁寬的比例（直式） */
+  --ar:.667;               /* 圖片長寬比，JS 讀到實際尺寸後覆寫 */
+}
+
+/* ---- 直式照片：照片偏一邊，說明直排在外側 ---- */
+.pg-air .shot{
+  position:absolute; top:50%; transform:translateY(-54%);
+  left:calc(var(--pw)*.105);
+  width:calc(var(--pw)*var(--shotw));
+  height:calc(var(--pw)*var(--shotw)/var(--ar));   /* ★ 高度由圖片決定 → 不裁切 */
+  overflow:hidden; background:var(--paper-d);
+  box-shadow:0 1px 2px rgba(40,30,16,.16), 0 14px 30px rgba(40,30,16,.13);
+}
+.pg-air .shot img{ width:100%; height:100%; object-fit:cover; }
+
+.pg-air .side{
+  position:absolute; top:50%; transform:translateY(-54%);
+  right:calc(var(--pw)*.095);
+  height:calc(var(--pw)*var(--shotw)/var(--ar));
+  padding-top:calc(var(--ph)*.055);
+  writing-mode:vertical-rl;
+}
+.pg-air .side::before{
+  content:""; position:absolute; top:0; right:0;
+  width:calc(var(--pw)*.075); height:1px; background:var(--accent); opacity:.85;
+}
+.pg-air .side .cap{
+  margin:0; font-size:calc(var(--ph)*.0265); line-height:1.9;
+  letter-spacing:.26em; color:var(--ink-2); font-weight:400;
+}
+.pg-air .mark{
+  position:absolute; left:calc(var(--pw)*.105); bottom:calc(var(--ph)*.115);
+  width:calc(var(--pw)*.16); height:1px; background:var(--accent); opacity:.55;
+}
+
+/* 左頁鏡射：照片靠訂口、直排說明走外側，跟右頁對稱 */
+.face.back .pg-air .shot{ left:auto; right:calc(var(--pw)*.105); }
+.face.back .pg-air .side{ right:auto; left:calc(var(--pw)*.095); }
+.face.back .pg-air .side::before{ right:auto; left:0; }
+.face.back .pg-air .mark{ left:auto; right:calc(var(--pw)*.105); }
+
+/* ---- 橫式照片：整張置中、說明橫排在下方 ----
+   橫式圖硬塞進直排版型會被裁掉三成寬，那就違背「留白」的用意了。 */
+.pg-air.is-w{
+  display:flex; flex-direction:column; justify-content:center;
+  padding:calc(var(--ph)*.10) calc(var(--pw)*.105);
+}
+.pg-air.is-w .shot{
+  position:static; transform:none; width:100%; height:auto;
+  aspect-ratio:var(--ar);
+}
+.pg-air.is-w .side{
+  position:static; transform:none; height:auto; padding:0;
+  writing-mode:horizontal-tb; margin-top:calc(var(--ph)*.042);
+}
+.pg-air.is-w .side::before{
+  position:static; display:block; width:calc(var(--pw)*.10);
+  margin:0 0 calc(var(--ph)*.022);
+}
+.pg-air.is-w .side .cap{
+  font-size:calc(var(--ph)*.0225); line-height:2.1;
+  letter-spacing:.17em; text-indent:.17em;
+}
+.pg-air.is-w .mark{ display:none; }
+.face.back .pg-air.is-w .shot,
+.face.back .pg-air.is-w .side{ right:auto; left:auto; }
+
+/* ============================================================
+   5. 版型：雙直（兩張直式）
+   ============================================================ */
+.pg-duo{ position:absolute; inset:0; background:var(--paper); }
+.pg-duo .shots{
+  position:absolute; top:calc(var(--ph)*.125); left:calc(var(--pw)*.085);
+  right:calc(var(--pw)*.085); height:calc(var(--ph)*.645);
+  display:flex; gap:calc(var(--pw)*.05); align-items:flex-start;
+}
+.pg-duo .shots figure{ margin:0; flex:1 1 0; overflow:hidden; background:var(--paper-d);
+  box-shadow:0 1px 2px rgba(40,30,16,.15), 0 10px 24px rgba(40,30,16,.12); }
+.pg-duo .shots figure:nth-child(1){ height:100%; }
+.pg-duo .shots figure:nth-child(2){ height:86%; margin-top:14%; }   /* 錯位：美式排版的呼吸 */
+.pg-duo .shots img{ width:100%; height:100%; object-fit:cover; }
+.pg-duo .cap{
+  position:absolute; left:calc(var(--pw)*.085); right:calc(var(--pw)*.085);
+  bottom:calc(var(--ph)*.105); text-align:center;
+}
+.pg-duo .cap-rule{ margin:0 auto calc(var(--ph)*.020); }
+
+/* ============================================================
+   6. 版型：雙橫（兩張橫式上下疊）
+   ============================================================ */
+.pg-duh{ position:absolute; inset:0; background:var(--paper); }
+.pg-duh .shots{
+  position:absolute; top:calc(var(--ph)*.115); left:calc(var(--pw)*.085);
+  right:calc(var(--pw)*.085); height:calc(var(--ph)*.665);
+  display:flex; flex-direction:column; gap:calc(var(--ph)*.032);
+}
+.pg-duh .shots figure{ margin:0; flex:1 1 0; overflow:hidden; background:var(--paper-d);
+  box-shadow:0 1px 2px rgba(40,30,16,.15), 0 10px 24px rgba(40,30,16,.12); }
+.pg-duh .shots figure:nth-child(1){ margin-right:calc(var(--pw)*.09); }
+.pg-duh .shots figure:nth-child(2){ margin-left:calc(var(--pw)*.09); }
+.pg-duh .shots img{ width:100%; height:100%; object-fit:cover; }
+.pg-duh .cap{
+  position:absolute; left:calc(var(--pw)*.085); right:calc(var(--pw)*.085);
+  bottom:calc(var(--ph)*.10); text-align:center;
+}
+.pg-duh .cap-rule{ margin:0 auto calc(var(--ph)*.020); }
+
+/* ============================================================
+   7. 版型：章名頁
+   ============================================================ */
+.pg-ch{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center;
+  padding:0 calc(var(--pw)*.075);
+  background:
+    radial-gradient(120% 80% at 50% 12%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 68%),
+    var(--paper);
+}
+.pg-ch .num{
+  font-size:calc(var(--ph)*.021); letter-spacing:.62em; text-indent:.62em;
+  color:var(--accent); font-weight:500; margin-bottom:calc(var(--ph)*.045);
+}
+.pg-ch .rule{
+  width:calc(var(--pw)*.30); height:1px; background:var(--accent); opacity:.55;
+  position:relative; margin:0 0 calc(var(--ph)*.052);
+}
+.pg-ch .rule::after{
+  content:""; position:absolute; left:50%; top:-3px; width:7px; height:7px;
+  transform:translateX(-50%) rotate(45deg); background:var(--accent); opacity:.9;
+}
+.pg-ch h2{
+  margin:0 0 calc(var(--ph)*.055); font-weight:600;
+  font-size:calc(var(--ph)*.098); line-height:1.18;
+  letter-spacing:.24em; text-indent:.24em; color:var(--ink);
+  margin-inline:calc(var(--pw)*-.075);      /* 抵銷 .pg-ch 的內距，標題不折行 */
+  text-wrap:balance;
+}
+.pg-ch .lead{
+  margin:0; font-size:calc(var(--ph)*.0265); line-height:2.5;
+  letter-spacing:.19em; text-indent:.19em; color:var(--ink-2);
+  white-space:pre-line; max-width:calc(var(--pw)*.80); font-weight:300;
+}
+.pg-ch .rule-b{
+  width:calc(var(--pw)*.13); height:1px; background:var(--accent); opacity:.45;
+  margin-top:calc(var(--ph)*.058);
+}
+
+/* ============================================================
+   8. 版型：整頁文字
+   ============================================================ */
+.pg-txt{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center;
+  padding:calc(var(--ph)*.13) calc(var(--pw)*.11);
+  background:var(--paper);
+}
+.pg-txt .quo{
+  font-family:"Cormorant Garamond",serif; font-size:calc(var(--ph)*.13);
+  line-height:.5; color:var(--accent); opacity:.32; margin-bottom:calc(var(--ph)*.045);
+}
+.pg-txt p{
+  margin:0; white-space:pre-line; font-weight:300;
+  font-size:calc(var(--ph)*.0335); line-height:2.55;
+  letter-spacing:.2em; text-indent:.2em; color:var(--ink);
+}
+.pg-txt .sign{
+  margin-top:calc(var(--ph)*.06); font-size:calc(var(--ph)*.021);
+  letter-spacing:.3em; text-indent:.3em; color:var(--ink-3);
+}
+.pg-txt .sign.empty{ display:none; }
+
+/* 空白頁：不是死頁，放一個很小的菱形當呼吸點 */
+.pg-blank{ position:absolute; inset:0; background:var(--paper); }
+.pg-blank .dot{
+  position:absolute; left:50%; top:50%; width:7px; height:7px;
+  transform:translate(-50%,-50%) rotate(45deg);
+  background:var(--accent); opacity:.42;
+}
+
+/* ============================================================
+   9. 封面 / 封底（結語）
+   ============================================================ */
+.pg-cover{ position:absolute; inset:0; overflow:hidden; background:#100E0A; }
+.pg-cover img{ width:100%; height:100%; object-fit:cover; opacity:.82; }
+.pg-cover .wash{
+  position:absolute; inset:0; z-index:2;
+  background:
+    linear-gradient(180deg, rgba(10,8,4,.52) 0%, rgba(10,8,4,.18) 38%, rgba(10,8,4,.72) 100%);
+}
+.pg-cover .box{
+  position:absolute; inset:0; z-index:3; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; color:#F6EFE2;
+  padding:0 calc(var(--pw)*.09);
+}
+.pg-cover .kick{
+  font-size:calc(var(--ph)*.0175); letter-spacing:.55em; text-indent:.55em;
+  color:#E3CDA3; margin-bottom:calc(var(--ph)*.05);
+}
+.pg-cover h1{
+  margin:0; font-weight:600; font-size:calc(var(--ph)*.115); line-height:1.1;
+  letter-spacing:.16em; text-indent:.16em; text-shadow:0 2px 24px rgba(0,0,0,.5);
+}
+.pg-cover .ln{
+  width:calc(var(--pw)*.24); height:1px; background:#D9BE90; opacity:.8;
+  margin:calc(var(--ph)*.05) 0;
+}
+.pg-cover .sub{
+  margin:0; font-size:calc(var(--ph)*.026); letter-spacing:.34em; text-indent:.34em;
+  color:#EADFCB; font-weight:300;
+}
+.pg-cover .foot{
+  position:absolute; left:0; right:0; bottom:calc(var(--ph)*.07); z-index:3;
+  text-align:center; color:#D8CBB4; font-size:calc(var(--ph)*.019);
+  letter-spacing:.28em; text-indent:.28em;
+}
+
+.pg-end{ position:absolute; inset:0; overflow:hidden; background:#100E0A; }
+.pg-end img{ width:100%; height:100%; object-fit:cover; opacity:.7; }
+.pg-end .wash{ position:absolute; inset:0; z-index:2;
+  background:linear-gradient(180deg, rgba(10,8,4,.62), rgba(10,8,4,.42) 45%, rgba(10,8,4,.8)); }
+.pg-end .box{
+  position:absolute; inset:0; z-index:3; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; color:#F6EFE2;
+  padding:0 calc(var(--pw)*.10);
+}
+.pg-end h2{
+  margin:0 0 calc(var(--ph)*.05); font-weight:600; font-size:calc(var(--ph)*.082);
+  letter-spacing:.2em; text-indent:.2em;
+}
+.pg-end .ln{ width:calc(var(--pw)*.18); height:1px; background:#D9BE90; opacity:.75;
+  margin-bottom:calc(var(--ph)*.05); }
+.pg-end p{
+  margin:0; white-space:pre-line; font-size:calc(var(--ph)*.029); line-height:2.4;
+  letter-spacing:.22em; text-indent:.22em; color:#EFE5D4; font-weight:300;
+}
+.pg-end .sign{
+  margin-top:calc(var(--ph)*.075); font-size:calc(var(--ph)*.0195);
+  letter-spacing:.3em; text-indent:.3em; color:#CBBCA1;
+}
+
+/* ============================================================
+   10. 手機直式（單頁）調整
+   ============================================================ */
+body.mobile .pg-air{ --shotw:.700; }
+body.mobile .pg-air .side{ right:calc(var(--pw)*.060); }
+body.mobile .pg-air .side .cap{ font-size:calc(var(--ph)*.0245); letter-spacing:.22em; }
+body.mobile .pg-air .mark{ left:calc(var(--pw)*.075); bottom:calc(var(--ph)*.10); }
+body.mobile .pg-air.is-w{ padding:calc(var(--ph)*.09) calc(var(--pw)*.075); }
+
+/* 雙直：手機直式改成錯位疊圖（兩張並排在直頁上會被壓到看不清） */
+body.mobile .pg-duo .shots{
+  display:block; position:absolute;
+  top:calc(var(--ph)*.093); left:calc(var(--pw)*.075); right:calc(var(--pw)*.075);
+  height:calc(var(--ph)*.665);
+}
+body.mobile .pg-duo .shots figure{ position:absolute; height:auto; margin:0; }
+body.mobile .pg-duo .shots figure:nth-child(1){
+  top:0; left:0; width:80%; height:93%;
+}
+body.mobile .pg-duo .shots figure:nth-child(2){
+  right:0; bottom:0; width:52%; height:62%;
+  outline:calc(var(--pw)*.014) solid var(--paper);
+  box-shadow:0 2px 4px rgba(40,30,16,.2), 0 16px 34px rgba(40,30,16,.24);
+}
+body.mobile .pg-duo .cap{
+  left:calc(var(--pw)*.075); right:auto; width:70%;
+  bottom:calc(var(--ph)*.075); text-align:left;
+}
+body.mobile .pg-duo .cap-rule{ margin:0 0 calc(var(--ph)*.016); }
+
+body.mobile .pg-duh .shots figure:nth-child(1){ margin-right:calc(var(--pw)*.06); }
+body.mobile .pg-duh .shots figure:nth-child(2){ margin-left:calc(var(--pw)*.06); }
+
+body.mobile .pg-ch h2{
+  font-size:calc(var(--ph)*.086); letter-spacing:.18em; text-indent:.18em;
+}
+body.mobile .pg-txt p{ font-size:calc(var(--ph)*.031); line-height:2.35; }
+/* 手機直式頁面較窄，結語主標「然　後　呢」用原字級會折行 */
+body.mobile .pg-end .box{ padding:0 calc(var(--pw)*.075); }
+body.mobile .pg-end h2{ font-size:calc(var(--ph)*.070); letter-spacing:.16em; text-indent:.16em; }
+body.mobile .rh{ letter-spacing:.34em; text-indent:.34em; }
+
+/* ============================================================
+   11. 介面：開場遮罩
+   ============================================================ */
+#gate{
+  position:fixed; inset:0; z-index:60; display:flex; align-items:center;
+  justify-content:center; background:#12100C; overflow:hidden;
+  transition:opacity .8s ease, visibility .8s;
+}
+#gate.away{ opacity:0; visibility:hidden; pointer-events:none; }
+#gate-art{
+  position:absolute; inset:-6%; z-index:0; background-size:cover; background-position:center;
+  filter:blur(14px) saturate(.85) brightness(.5); transform:scale(1.06);
+  opacity:0; transition:opacity 1.2s ease;
+}
+#gate-art.on{ opacity:1; }
+#gate::after{
+  content:""; position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:radial-gradient(90% 70% at 50% 45%, rgba(0,0,0,.15), rgba(0,0,0,.68));
+}
+#gate-inner{
+  position:relative; z-index:2; text-align:center; color:#F4EDE0;
+  padding:6vh 8vw; max-width:640px;
+}
+.g-kicker{
+  margin:0 0 4vh; font-size:clamp(9px,1.5vw,12px); letter-spacing:.6em;
+  text-indent:.6em; color:#DCC49B;
+}
+.g-title{
+  margin:0; font-weight:600; font-size:clamp(38px,9vw,74px);
+  letter-spacing:.2em; text-indent:.2em; line-height:1.15;
+}
+.g-rule{ margin:4vh 0; display:flex; justify-content:center; }
+.g-rule span{ width:88px; height:1px; background:#D9BE90; opacity:.8; }
+.g-sub{
+  margin:0 0 2.2vh; font-size:clamp(13px,2.6vw,17px); font-weight:300;
+  letter-spacing:.36em; text-indent:.36em; color:#EADFCB;
+}
+.g-note{
+  margin:0 0 6vh; font-size:clamp(11px,2.1vw,14px); font-weight:300;
+  letter-spacing:.22em; text-indent:.22em; color:#B6AB97;
+}
+.g-btns{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+.gbtn{
+  border:1px solid rgba(217,190,144,.5); background:rgba(255,250,240,.05);
+  color:#F0E7D6; padding:15px 30px; font-size:clamp(12px,2.3vw,15px);
+  letter-spacing:.24em; text-indent:.24em; border-radius:2px;
+  transition:background .3s, border-color .3s, transform .2s;
+}
+.gbtn:hover{ background:rgba(255,250,240,.12); border-color:#D9BE90; }
+.gbtn:active{ transform:scale(.97); }
+.gbtn-main{ background:rgba(217,190,144,.16); border-color:rgba(217,190,144,.8); }
+.g-hint{
+  margin:5vh 0 0; font-size:clamp(10px,1.9vw,12px); color:#8A8172;
+  letter-spacing:.2em; text-indent:.2em;
+}
+@media (orientation:landscape) and (min-width:700px){ .g-hint{ display:none; } }
+
+/* ============================================================
+   12. 介面：右上角、底部、目錄
+   ============================================================ */
+#corner{
+  position:fixed; top:0; right:0; z-index:40; display:flex; gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 0 0; flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.btn{
+  border:1px solid rgba(232,220,198,.24); background:rgba(20,17,12,.45);
+  color:#E4DACA; padding:8px 15px; font-size:12px; letter-spacing:.2em;
+  text-indent:.2em; border-radius:2px; backdrop-filter:blur(8px);
+  transition:background .25s, border-color .25s, color .25s;
+}
+.btn:hover{ background:rgba(40,34,24,.65); border-color:rgba(232,220,198,.45); }
+.btn.on{ background:rgba(169,138,91,.32); border-color:rgba(217,190,144,.75); color:#F6EEDE; }
+
+#bar{
+  position:fixed; left:0; right:0; bottom:0; z-index:40;
+  display:flex; align-items:center; justify-content:center; gap:min(4vw,34px);
+  padding:0 16px calc(env(safe-area-inset-bottom,0px) + 14px);
+}
+.nav{
+  width:42px; height:42px; border-radius:50%; font-size:22px; line-height:1;
+  border:1px solid rgba(232,220,198,.22); background:rgba(20,17,12,.45);
+  color:#E4DACA; backdrop-filter:blur(8px);
+  transition:background .25s, border-color .25s, opacity .25s;
+}
+.nav:hover{ background:rgba(40,34,24,.65); }
+.nav[disabled]{ opacity:.28; pointer-events:none; }
+
+#meter{ width:min(46vw,340px); }
+#meter-txt{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:11px; letter-spacing:.22em; color:#B3A891; margin-bottom:7px;
+}
+#ch-now{ text-indent:.22em; }
+#pg-now{ font-family:"Cormorant Garamond",serif; letter-spacing:.14em; }
+#track{ height:1px; background:rgba(232,220,198,.2); position:relative; }
+#fill{
+  position:absolute; left:0; top:-1px; height:3px; width:0;
+  background:linear-gradient(90deg, rgba(217,190,144,.4), #D9BE90);
+  transition:width .45s ease;
+}
+
+#toc{
+  position:fixed; inset:0; z-index:55; background:rgba(14,12,9,.96);
+  backdrop-filter:blur(10px); overflow-y:auto; overscroll-behavior:contain;
+  opacity:0; visibility:hidden; transition:opacity .4s, visibility .4s;
+}
+#toc.open{ opacity:1; visibility:visible; }
+#toc-x{
+  position:absolute; top:calc(env(safe-area-inset-top,0px) + 12px); right:16px;
+  width:44px; height:44px; border:0; background:none; color:#CFC4AE; font-size:30px;
+}
+#toc-in{ max-width:560px; margin:0 auto; padding:16vh 8vw 12vh; }
+.t-kicker{
+  margin:0 0 12px; font-size:11px; letter-spacing:.6em; text-indent:.6em; color:#A98A5B;
+  font-family:"Cormorant Garamond",serif;
+}
+.t-head{
+  margin:0 0 6vh; font-size:clamp(26px,6vw,40px); font-weight:600; color:#F1E8D8;
+  letter-spacing:.18em; text-indent:.18em;
+}
+#toc-list{ list-style:none; margin:0; padding:0; }
+#toc-list li{ border-top:1px solid rgba(232,220,198,.14); }
+#toc-list li:last-child{ border-bottom:1px solid rgba(232,220,198,.14); }
+#toc-list button{
+  width:100%; border:0; background:none; text-align:left; padding:22px 4px;
+  display:flex; align-items:baseline; gap:18px; color:#E7DDCA;
+}
+#toc-list .n{
+  font-size:11px; letter-spacing:.34em; color:#A98A5B; min-width:3.2em;
+}
+#toc-list .t{
+  font-size:clamp(17px,4vw,23px); letter-spacing:.2em; text-indent:.2em; font-weight:400;
+}
+#toc-list .p{
+  margin-left:auto; font-family:"Cormorant Garamond",serif; font-size:13px; color:#7E7568;
+}
+#toc-list button:hover .t{ color:#F6EEDE; }
+
+/* ============================================================
+   13. 掃光 keyframes（★ 從 --flip-ease 反推算出來的，不要手改）
+   opacity = |sin(180° × ease(p))|
+   時間函數固定 linear，% 才等於時間。
+   ============================================================ */
+@keyframes pageShadePC{0%{opacity:0.000} 5%{opacity:0.018} 10%{opacity:0.053} 15%{opacity:0.111} 20%{opacity:0.199} 25%{opacity:0.327} 30%{opacity:0.507} 35%{opacity:0.741} 40%{opacity:0.958} 45%{opacity:0.976} 50%{opacity:0.809} 55%{opacity:0.612} 60%{opacity:0.444} 65%{opacity:0.312} 70%{opacity:0.211} 75%{opacity:0.136} 80%{opacity:0.081} 85%{opacity:0.043} 90%{opacity:0.018} 95%{opacity:0.004} 100%{opacity:0.000}}
+@keyframes pageShadeM {0%{opacity:0.000} 5%{opacity:0.277} 10%{opacity:0.548} 15%{opacity:0.781} 20%{opacity:0.941} 25%{opacity:1.000} 30%{opacity:0.953} 35%{opacity:0.828} 40%{opacity:0.673} 45%{opacity:0.524} 50%{opacity:0.397} 55%{opacity:0.294} 60%{opacity:0.212} 65%{opacity:0.149} 70%{opacity:0.101} 75%{opacity:0.065} 80%{opacity:0.039} 85%{opacity:0.021} 90%{opacity:0.009} 95%{opacity:0.002} 100%{opacity:0.000}}
+
+/* 正反面切換點（★ 同樣是從 --flip-ease 反推的，不要手改）
+   側轉滿 90 度的時刻＝ease(p)=0.5 的那個 p：
+     PC  cubic-bezier(.61,.04,.21,1) → 42.79%
+     M   cubic-bezier(.38,.66,.32,1) → 25.17%
+   faceKeep = 這一面先看得到、過 90 度後收起來
+   faceShow = 這一面先收著、過 90 度後出現                       */
+@keyframes faceKeepPC{0%,42.7%{visibility:visible} 42.9%,100%{visibility:hidden}}
+@keyframes faceShowPC{0%,42.7%{visibility:hidden}  42.9%,100%{visibility:visible}}
+@keyframes faceKeepM {0%,25.0%{visibility:visible} 25.3%,100%{visibility:hidden}}
+@keyframes faceShowM {0%,25.0%{visibility:hidden}  25.3%,100%{visibility:visible}}
+
+@media (prefers-reduced-motion:reduce){
+  :root{ --flip:.28s; }
+  .leaf.flipping .face::before{ animation:none; }
+}

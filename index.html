@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1C1917">
+<title>Our Story</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500;600;700;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<!-- ── 開場遮罩 ───────────────────────────────── -->
+<div id="gate">
+  <div id="gate-art"></div>
+  <div id="gate-inner">
+    <p class="g-kicker"></p>
+    <h1 class="g-title"></h1>
+    <div class="g-rule"><span></span></div>
+    <p class="g-sub"></p>
+    <p class="g-note"></p>
+    <div class="g-btns">
+      <button id="go-music" class="gbtn gbtn-main"><span>開啟音樂並開始</span></button>
+      <button id="go-mute"  class="gbtn">靜音瀏覽</button>
+    </div>
+    <p class="g-hint">建議橫放手機或用電腦觀看</p>
+  </div>
+</div>
+
+<!-- ── 右上角功能鍵 ───────────────────────────── -->
+<header id="corner" hidden>
+  <button class="btn" id="btn-toc"  aria-label="目錄">目錄</button>
+  <button class="btn" id="btn-auto" aria-label="自動播放">自動播放</button>
+  <button class="btn" id="btn-snd"  aria-label="音樂">音樂</button>
+</header>
+
+<!-- ── 書 ─────────────────────────────────────── -->
+<main id="stage" hidden>
+  <div id="book"><div id="spine"></div></div>
+</main>
+
+<!-- ── 底部：頁碼 / 翻頁 / 進度 ────────────────── -->
+<footer id="bar" hidden>
+  <button class="nav" id="prev" aria-label="上一頁">‹</button>
+  <div id="meter">
+    <div id="meter-txt"><span id="ch-now"></span><span id="pg-now"></span></div>
+    <div id="track"><i id="fill"></i></div>
+  </div>
+  <button class="nav" id="next" aria-label="下一頁">›</button>
+</footer>
+
+<!-- ── 目錄 ───────────────────────────────────── -->
+<nav id="toc" hidden>
+  <button id="toc-x" aria-label="關閉">×</button>
+  <div id="toc-in">
+    <p class="t-kicker">CONTENTS</p>
+    <h2 class="t-head">目　錄</h2>
+    <ol id="toc-list"></ol>
+  </div>
+</nav>
+
+<audio id="bgm" loop preload="none"></audio>
+
+<script src="config/album.js"></script>
+<script src="assets/book.js"></script>
+</body>
+</html>
