@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Our Story</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Noto+Sans+TC:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+  <!-- 書 -->
+  <div id="stage">
+    <div id="book"></div>
+  </div>
+
+  <div id="hint">← → 或滑動翻頁</div>
+
+  <!-- 右上角 -->
+  <div id="corner">
+    <button class="btn" id="btn-toc">目錄</button>
+    <button class="btn" id="btn-auto">▶ 自動播放</button>
+    <button class="btn" id="btn-music">♪ 音樂 關</button>
+  </div>
+
+  <!-- 底部控制 -->
+  <div id="ui">
+    <button class="btn round" id="prev" title="上一頁">‹</button>
+    <div id="counter">封面</div>
+    <button class="btn round" id="next" title="下一頁">›</button>
+  </div>
+
+  <!-- 目錄 -->
+  <div id="toc">
+    <div class="box">
+      <h3>目錄</h3>
+      <div id="tocbox"></div>
+    </div>
+  </div>
+
+  <!-- 開場（讓使用者自己決定要不要放音樂） -->
+  <div id="intro">
+    <div class="en" id="intro-en"></div>
+    <h1 id="intro-title"></h1>
+    <div class="rule"></div>
+    <div class="sub" id="intro-sub"></div>
+    <div class="row">
+      <button class="btn" id="start-music">♪　開啟音樂並開始</button>
+      <button class="btn" id="start-mute">靜音瀏覽</button>
+    </div>
+    <div class="note">隨時可以從右上角切換音樂</div>
+  </div>
+
+  <audio id="bgm" loop preload="none"></audio>
+
+  <script src="config/album.js"></script>
+  <script src="assets/book.js"></script>
+</body>
+</html>
