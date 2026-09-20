@@ -112,7 +112,17 @@ html,body{
       翻頁的動態感由下面那道角度驅動的掃光負責，這兩層就夠了。
    結果：翻頁陰影從三條各自寫死的時間軸，收斂成「旋轉」＋「掃光」兩條，
    而且掃光的 keyframes 是從旋轉曲線反推出來的，不可能再失準。 */
-.leaf.flipping{ transition-duration: var(--flip); }
+/* 翻頁中的那一片改用 animation（不是 transition）。
+   ------------------------------------------------------------
+   2026-09-20：transition 與 animation 不保證同一幀開始（實測差到 50ms），
+   而正反面切換、掃光都是 animation —— 在手機只有 .62s 的翻頁裡，
+   這個時間差會讓「換面」比「轉到 90 度」早或晚，看起來就是閃一下。
+   改成三者都走 animation、共用 var(--flip) 與 var(--flip-ease)，
+   時間軸就只有一條。 */
+.leaf.flipping     { animation: leafFwd var(--flip) var(--flip-ease) both; }
+.leaf.flipping.rev { animation-name: leafBack; }   /* 往回翻 */
+@keyframes leafFwd { from{ transform:rotateY(0deg);    } to{ transform:rotateY(-180deg); } }
+@keyframes leafBack{ from{ transform:rotateY(-180deg); } to{ transform:rotateY(0deg);    } }
 
 .face{
   position:absolute; inset:0;
@@ -120,7 +130,29 @@ html,body{
   overflow:hidden;
   background:var(--紙);
 }
-.face.back{ transform: rotateY(180deg); }
+/* 正反面分開三層保險，都不倚賴 backface-visibility（有些瀏覽器不剔除，
+   兩面共平面時會抓鬮，翻頁中就會透出另一面、而且是左右相反的）。
+   ① 兩面之間留 1px 的 z 距離，深度排序不再有歧義
+      （2100px 透視下 1px 只放大 0.05%，看不出來）。 */
+.face.front{ transform: translateZ(1px); }
+.face.back { transform: rotateY(180deg) translateZ(1px); }
+
+/* ② 靜止時直接把背對我們的那一面收起來。 */
+.leaf:not(.flipping).flipped       .face.front{ visibility:hidden; }
+.leaf:not(.flipping):not(.flipped) .face.back { visibility:hidden; }
+
+/* ③ 翻頁進行中依角度換面：切換點＝側轉滿 90 度的那一刻，
+      用 --flip-ease 反推（PC 42.8%、手機 25.2%），時間函數固定 linear。
+      .rev＝往回翻，正反面出現的順序相反。
+      ⚠️ 這四組的先後順序不能調換，靠後寫的權重才壓得過前面。 */
+.leaf.flipping .face.front{ animation: faceKeepPC var(--flip) linear both; }
+.leaf.flipping .face.back { animation: faceShowPC var(--flip) linear both; }
+body.thin .leaf.flipping .face.front{ animation-name: faceKeepM; }
+body.thin .leaf.flipping .face.back { animation-name: faceShowM; }
+body      .leaf.flipping.rev .face.front{ animation-name: faceShowPC; }
+body      .leaf.flipping.rev .face.back { animation-name: faceKeepPC; }
+body.thin .leaf.flipping.rev .face.front{ animation-name: faceShowM; }
+body.thin .leaf.flipping.rev .face.back { animation-name: faceKeepM; }
 
 /* 靠書縫那側的內陰影 */
 .face.front::after,
@@ -237,6 +269,12 @@ body.mobile .leaf{ left:0; }
 body.mobile #spine{ display:none; }
 body.mobile .face.front::after,
 body.mobile .face.back::after{ display:none; }
+
+/* 單頁模式：背面是空白的（手機一頁就是一張照片，沒有另一面要看），
+   所以整面藏起來。翻頁前半段看到的就是下面那一頁（還沒翻走的原頁），
+   轉過 90 度之後才換成新的一頁 —— 中間不會掃過一張空白紙。
+   ⚠️ 用 !important 是因為要壓過 faceShowM 那組動畫。 */
+body.mobile .face.back{ visibility:hidden !important; }
 
 /* ============================ 頁面內容 ============================ */
 .page{
@@ -560,3 +598,15 @@ body.mobile .duopage .cap::before{
   display:block; margin-bottom:.6em;
 }
 body.mobile .duopage .cap.empty{ display:none; }
+
+
+/* ============================================================
+   正反面切換（角度驅動）
+   faceKeep＝這一面先看得到、過 90 度後收起來
+   faceShow＝這一面先收著、過 90 度後才出現
+   百分比是用 --flip-ease 反推 ease(p)=0.5 的那個 p，不能手調。
+   ============================================================ */
+@keyframes faceKeepPC{ 0%,42.7%{visibility:visible} 42.9%,100%{visibility:hidden} }
+@keyframes faceShowPC{ 0%,42.7%{visibility:hidden}  42.9%,100%{visibility:visible} }
+@keyframes faceKeepM { 0%,25.0%{visibility:visible} 25.3%,100%{visibility:hidden} }
+@keyframes faceShowM { 0%,25.0%{visibility:hidden}  25.3%,100%{visibility:visible} }

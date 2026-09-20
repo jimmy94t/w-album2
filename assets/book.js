@@ -211,6 +211,10 @@
         lf.style.zIndex = pages.length - i;
         lf.innerHTML =
           '<div class="face front">' + pageHTML(p, i) + "</div>" +
+          /* 單頁模式的背面固定留白，而且 CSS 會把它整個藏起來
+             （body.mobile .face.back{visibility:hidden}）——
+             手機一頁就是一張照片，沒有「紙的另一面」要給人看，
+             藏起來才不會在翻頁前半段掃出一張空白紙。 */
           '<div class="face back"><div class="page"></div></div>';
         book.appendChild(lf);
         leaves.push(lf);
@@ -305,18 +309,23 @@
     }
     // 這次動作真正在翻的是哪一張葉子（見下方 apply() 的說明）
     var activeLeaf = leaves[dir > 0 ? pos : pos - 1];
-    if (activeLeaf) activeLeaf.classList.add("flipping");
+    if (activeLeaf) {
+      activeLeaf.classList.add("flipping");
+      /* 往回翻時，正反面出現的順序是相反的（見 style.css 的 faceKeep/faceShow）。 */
+      activeLeaf.classList.toggle("rev", dir < 0);
+    }
     pos = np;
     apply(false);
     setTimeout(function () {
       animating = false;
-      if (activeLeaf) activeLeaf.classList.remove("flipping");
+      if (activeLeaf) { activeLeaf.classList.remove("flipping"); activeLeaf.classList.remove("rev"); }
       apply(false);
     }, flipMs());
   }
 
   function jump(target) {
     if (animating) return;
+    leaves.forEach(function (l) { l.classList.remove("flipping"); l.classList.remove("rev"); });
     pos = mobile ? target : Math.floor(target / 2);
     apply(true);
   }
