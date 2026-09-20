@@ -258,6 +258,14 @@ body.mobile .face.back::before{ display:none; }
    （就是使用者看到的「花拱之」＋「下」那種 3+1 分段）。
    字級縮到 ph*.084、字距收到 .17em 之後需要 305px，7 個章名全部一行放得下。
    小手機 360×640 同樣通過（需要 271px / 可用 282px）。 */
+/* 手機直式：引言的字級稍微收一點，讓每一句都排得下一行，
+   不會折出「日子。」這種只有三個字的孤行。
+   （2026-09-20 新文案的句子比舊版長，實測 .0225 會折、.0205 剛好放得下，
+     390×844 與 360×640 都驗過。） */
+body.mobile .chapter .lead{ font-size:calc(var(--ph)*.0205); }
+/* 結語內文同理（手機上 18 字的句子在 .027 會折出「來。」的孤行） */
+body.mobile .ending p{ font-size:calc(var(--ph)*.0235); }
+
 body.mobile .chapter h2{
   font-size: calc(var(--ph)*.084);
   letter-spacing:.17em; text-indent:.17em;
@@ -380,6 +388,9 @@ body.mobile .strip .shot{ width:72%; }
   margin-top:calc(var(--ph)*.03);
   font-size:calc(var(--ph)*.0225); line-height:2.2; letter-spacing:.09em;
   color:var(--淡墨); white-space:pre-line;
+  /* 引言是兩三句短句，手機上一句常常要折行。balance 會把每一句折成
+     長度接近的兩行，不會掉出「日子。」這種只有三個字的孤行。 */
+  text-wrap: balance;
 }
 
 /* --- 純文字頁 --- */
@@ -425,6 +436,8 @@ body.mobile .strip .shot{ width:72%; }
   box-shadow:0 10px 26px rgba(90,72,50,.24);
 }
 .cover .foot, .ending .foot{ flex:none; text-align:center; }
+/* 結語內文同理，避免最後一行只剩一兩個字 */
+.ending .foot p{ text-wrap: balance; }
 
 .cover .en, .ending .en{
   font-family:var(--標題字); font-size:calc(var(--ph)*.021);
