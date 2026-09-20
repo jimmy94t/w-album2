@@ -1,3 +1,6 @@
-# /demo ＝ 收禮桌那台 iPad 的展示模式（閒置自動翻頁）。200 是「改寫」不是轉址，網址列會停在 /demo。
-/demo   /index.html   200
-/demo/  /index.html   200
+# 展示模式（收禮桌那台 iPad）：網址打 /demo 就轉到帶參數的首頁。
+# ⚠️ 原本寫成「/demo /index.html 200」（改寫、網址列停在 /demo），實測 Cloudflare Pages
+#    會把 /index.html 正規化成 /，結果參數整個掉了、進不了展示模式。改用 302 轉址最穩：
+#    網址列會變成 /?demo=1，而且開過一次就記在那台裝置，之後開一般網址也還是展示模式。
+/demo    /?demo=1    302
+/demo/   /?demo=1    302
