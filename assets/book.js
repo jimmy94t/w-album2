@@ -342,10 +342,50 @@
     apply(true);
   }
 
+  /* ---------------- 展示模式（收禮桌那台 iPad） ----------------
+     怎麼開：那台裝置的網址加 /demo（例如 w-album2.pages.dev/demo）。
+             開過一次就記在那台瀏覽器裡，之後開一般網址也還是展示模式
+             —— 加入主畫面、重新整理都不會掉。
+     怎麼關：同一台開 ?demo=off。
+     行為：閒置一段時間沒人碰 → 自動翻頁；有人一碰就停，手放開再閒置一樣的時間又自己開始。
+     想調節奏不用改程式：/demo?idle=30&sec=6 （秒）。
+     ⚠️ 刻意不做「偵測是不是 iPad」：偵測不可靠（iPadOS 會自稱 Macintosh），
+        而且要的是「這台是展示機」而不是「這是 iPad」—— 賓客自己帶的平板不該被自動翻頁。 */
+  var 網址參數 = {};
+  (location.search || "").replace(/^\?/, "").split("&").forEach(function (kv) {
+    if (!kv) return;
+    var i = kv.indexOf("=");
+    網址參數[decodeURIComponent(i < 0 ? kv : kv.slice(0, i))] = i < 0 ? "" : decodeURIComponent(kv.slice(i + 1));
+  });
+  var KIOSK = (function () {
+    var v = 網址參數.demo !== undefined ? 網址參數.demo : 網址參數.kiosk;
+    var 關掉 = (v === "off" || v === "0");
+    var 開啟 = /(^|\/)demo\/?$/.test(location.pathname) || (v !== undefined && !關掉);
+    try {
+      if (關掉) { localStorage.removeItem("展示模式"); return false; }
+      if (開啟) localStorage.setItem("展示模式", "1");
+      else if (localStorage.getItem("展示模式") === "1") 開啟 = true;
+    } catch (e) { /* 無痕模式等存不了，就只看這次的網址 */ }
+    return 開啟;
+  })();
+  function 秒(名, 預設) {
+    var v = parseFloat(網址參數[名]);
+    return (v > 0 && v < 3600) ? Math.round(v * 1000) : 預設;
+  }
+
   /* ---------------- 自動翻頁 ---------------- */
-  var AUTO_MS = 5000;      // 每隔幾秒自動翻下一頁
+  var AUTO_MS = 秒("sec", KIOSK ? 6000 : 5000);   // 每隔幾秒自動翻下一頁
+  var IDLE_MS = 秒("idle", 30000);                // 展示模式：閒置多久就自己開始翻
+  var idleTimer = null;
   var autoTimer = null;
   var autoOn = false;
+
+  /* 閒置計時器：只有展示模式會用。任何操作都會把它重新計時。 */
+  function resetIdle() {
+    if (!KIOSK) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { if (!autoOn) startAuto(); }, IDLE_MS);
+  }
 
   function autoTick() {
     var limit = mobile ? pages.length - 1 : total();
@@ -369,7 +409,7 @@
   }
   /* 使用者自己手動操作（點按鈕、滑動、滾輪、開目錄…）就視為接手控制，
      自動播放先關掉，避免兩邊互相搶著翻頁。 */
-  function pauseAutoIfOn() { if (autoOn) stopAuto(); }
+  function pauseAutoIfOn() { if (autoOn) stopAuto(); resetIdle(); }
   btnAuto.addEventListener("click", function () { autoOn ? stopAuto() : startAuto(); });
 
   /* ---------------- 操作 ---------------- */
@@ -484,6 +524,27 @@
   }
   document.getElementById("start-music").addEventListener("click", function () { start(true); });
   document.getElementById("start-mute").addEventListener("click", function () { start(false); });
+
+  /* 展示模式：沒有人會去點開場遮罩，直接靜音進入。
+     （iPad 不允許沒有使用者手勢就播音樂，要配樂就現場點一次右上角的「♪ 音樂」。） */
+  if (KIOSK) {
+    document.body.classList.add("kiosk");
+    start(false);
+    resetIdle();
+    /* 任何操作都重新計時；touch/pointer 都收，因為滑動不一定會走到 pauseAutoIfOn。 */
+    ["pointerdown", "touchstart", "keydown", "wheel"].forEach(function (ev) {
+      document.addEventListener(ev, function () { resetIdle(); }, { passive: true });
+    });
+    /* 盡量不要讓 iPad 自己睡著（Safari 16.4+ 支援；不支援就忽略，
+       最保險還是到 設定 → 顯示與亮度 → 自動鎖定 → 永不）。 */
+    var 醒著 = function () {
+      if (!navigator.wakeLock || document.visibilityState !== "visible") return;
+      navigator.wakeLock.request("screen").catch(function () {});
+    };
+    醒著();
+    document.addEventListener("visibilitychange", 醒著);
+    document.addEventListener("pointerdown", 醒著, { passive: true });
+  }
 
   /* ---------------- 走 ---------------- */
   document.title = C.網頁標題 || "Our Story";
