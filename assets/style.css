@@ -342,6 +342,7 @@ body.mobile .pnum{ text-align:center !important; padding:0 !important; }
 .strip .shot:nth-child(3){ align-self:flex-end;   }
 .strip img{
   width:100%; height:auto; max-width:none; max-height:none; display:block;
+  aspect-ratio: auto 3 / 2;   /* 同上，連拍三格都是橫式 */
   box-shadow:0 6px 16px rgba(90,72,50,.20); background:#EFE9E0;
 }
 /* 手機直式頁面更窄，照片可以放大一點 */
@@ -579,6 +580,10 @@ body.mobile .duopage .shots.duo .shot:last-child{
 }
 body.mobile .duopage .shots.duo img{
   width:100%; height:auto; max-width:none; max-height:none;
+  /* 圖還沒載進來時先用 2:3 撐出高度（auto 表示圖載好就改用真正的比例，
+     不會被拉變形）。沒有這一行的話，未載入的圖高度是 0，
+     在某些瀏覽器上載好也不會重新排版 —— 看起來就是「大圖不見了」。 */
+  aspect-ratio: auto 2 / 3;
 }
 body.mobile .duopage .shots.duo .shot:last-child img{
   /* 副圖加一圈紙色外框，壓在主圖上時才分得出前後 */

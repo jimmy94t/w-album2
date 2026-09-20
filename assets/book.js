@@ -47,8 +47,12 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function img(name) {
-    /* 先不給 src，等這一頁快翻到了才載入（手機記憶體救命用） */
-    return '<img loading="lazy" decoding="async" data-src="' +
+    /* 先不給 src，等這一頁快翻到了才載入（手機記憶體救命用）。
+       ⚠️ 不可以再加 loading="lazy"：載入時機已經由 hydrate() 自己控制，
+       再讓瀏覽器自己判斷會打架 —— Safari 會把「剛設好 src、但還在 3D 圖層裡
+       還沒排版」的圖再往後延，結果那一頁翻到時圖是空的，翻走再翻回來才出現
+       （2026-09-20 使用者回報「雙直頁的大圖會消失」就是這個）。 */
+    return '<img decoding="async" data-src="' +
       IMGDIR + encodeURIComponent(name) + '" alt="">';
   }
 
@@ -58,8 +62,12 @@
     lf.__on = 1;
     var list = lf.querySelectorAll("img[data-src]");
     for (var i = 0; i < list.length; i++) {
-      list[i].src = list[i].getAttribute("data-src");
-      list[i].removeAttribute("data-src");
+      var im = list[i];
+      im.removeAttribute("loading");          /* 保險：舊快取來的 HTML 也拿掉 */
+      im.src = im.getAttribute("data-src");
+      im.removeAttribute("data-src");
+      /* 主動要求解碼，讓圖片在翻到之前就準備好，不要等瀏覽器自己排隊 */
+      if (im.decode) { im.decode().catch(function () {}); }
     }
   }
   function cap(t) {
