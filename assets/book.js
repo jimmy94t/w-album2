@@ -79,10 +79,14 @@
 
     if (p.型 === "封面") {
       var c = C.封面 || {};
+      /* 主標如果是英文（像 "OUR STORY"），字級與字距要另外一套 ——
+         中文 2~3 個字的大小拿來排 9 個英文字母會塞不下、被折成兩行。
+         這裡只加一個 class，實際尺寸交給 style.css 的 .cover h1.latin。 */
+      var 主標拉丁 = /^[\x20-\x7E]+$/.test(c.主標 || "");
       return '<div class="cover">' +
         '<div class="head">' +
           '<div class="en">' + esc(c.英文標) + "</div>" +
-          "<h1>" + esc(c.主標) + "</h1>" +
+          '<h1' + (主標拉丁 ? ' class="latin"' : '') + ">" + esc(c.主標) + "</h1>" +
           '<div class="rule"></div>' +
           '<div class="sub">' + esc(c.副標) + "</div>" +
         "</div>" +

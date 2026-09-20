@@ -448,6 +448,13 @@ body.mobile .strip .shot{ width:72%; }
   font-size:calc(var(--ph)*.105); letter-spacing:.26em; text-indent:.26em;
   color:var(--墨); line-height:1.2;
 }
+/* 英文主標：9 個字母用中文的字級會折成兩行，所以縮小、字距收窄、不折行。
+   實測 .068＋.18em 在 360/390 的手機、手機橫式、平板、桌機都是一行。 */
+.cover h1.latin{
+  font-size:calc(var(--ph)*.068); letter-spacing:.18em; text-indent:.18em;
+  white-space:nowrap;
+}
+
 .cover .rule, .ending .rule{
   width:calc(var(--pw)*.20); height:1px; background:var(--金); opacity:.6;
   margin:calc(var(--ph)*.012) 0;
