@@ -5,12 +5,14 @@
 <!-- /demo（展示模式）是用 Cloudflare 的 _redirects 改寫成這一頁，網址列會停在 /demo，
      所以相對路徑要有 base 才不會被當成 /demo/assets/... -->
 <base href="/">
+<!-- ?v=… 是快取版號：改過 css/js 就把這個日期往後改，
+     手機／平板才不會還抓到瀏覽器裡的舊檔。 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Our Story</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Noto+Sans+TC:wght@300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v=20260921b">
 </head>
 <body>
 
@@ -58,7 +60,7 @@
 
   <audio id="bgm" loop preload="none"></audio>
 
-  <script src="config/album.js"></script>
-  <script src="assets/book.js"></script>
+  <script src="config/album.js?v=20260921b"></script>
+  <script src="assets/book.js?v=20260921b"></script>
 </body>
 </html>

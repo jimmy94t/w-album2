@@ -330,8 +330,18 @@
     apply(false);
     setTimeout(function () {
       animating = false;
-      if (activeLeaf) { activeLeaf.classList.remove("flipping"); activeLeaf.classList.remove("rev"); }
-      apply(false);
+      if (activeLeaf) {
+        activeLeaf.classList.remove("flipping");
+        activeLeaf.classList.remove("rev");
+        /* ⚠️ 這裡以前是再跑一次 apply()。但翻頁開始時 apply() 已經把
+           display、書本 class、頁碼都設好了，結束時唯一還要改的只有
+           「剛翻完那一片的 z-index（翻頁中是 500）」。整包重跑會在動畫
+           結束的同一幀更動好幾片葉子的 display 與層級，在 GPU 上等於
+           同時建立/銷毀合成圖層，有些裝置就會閃一下。改成只動這一片。
+           （2026-09-21，使用者回報橫式翻完左頁會閃。） */
+        var ai = leaves.indexOf(activeLeaf);
+        activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
+      }
     }, flipMs());
   }
 
