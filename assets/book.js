@@ -361,7 +361,7 @@
       if (finished) return;
       finished = true;
       if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-      animating = false;
+      var settlingLeaves = [];
       if (activeLeaf) {
         activeLeaf.removeEventListener("animationend", onEnd);
         var ai = leaves.indexOf(activeLeaf);
@@ -371,11 +371,45 @@
            z-index 也一起換成靜止值（翻頁中是 500）。 */
         activeLeaf.classList.toggle("flipped", ai < pos);
         activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
-        activeLeaf.classList.remove("flipping");
-        activeLeaf.classList.remove("rev");
       }
-      restVisibility();   /* 翻完了：把後面看不到的頁重新藏起來 */
-      diagAfterFlip(dir);
+
+      /* iPhone Safari 的 WebKit 會把 transform 動畫中的整頁提升成 GPU 合成層。
+         如果在 animationend 的同一幀同時：
+           1. 拿掉 flipping（撤除動畫層）
+           2. 把剛離開的頁 display:none
+         合成器偶爾會在兩種圖層樹交接的空檔，把離開頁的舊貼圖再送出一幀。
+         DOM 狀態與頁碼都正確，但肉眼會看到「第 2 頁停好後又閃一下第 3 頁」。
+
+         收尾改成三段：
+           A. 動畫仍停在最後一幀時，先藏掉離開頁，並只提升真正看得到的頁。
+           B. 讓瀏覽器完整畫過一幀後，才從動畫 transform 交給靜態 transform。
+           C. 再過一幀才撤掉臨時合成層。
+         settling 只套在當前 1～2 頁，不會像所有 thin 葉子都加 will-change
+         那樣耗掉 iPhone 的圖層記憶體。 */
+      leaves.forEach(function (l, i) {
+        var show = mobile ? (i === pos) : (i === pos || i === pos - 1);
+        if (show) {
+          l.classList.add("settling");
+          settlingLeaves.push(l);
+        }
+      });
+      restVisibility();
+      void book.offsetWidth;   // 先提交「離開頁已隱藏、目前頁已提升」的樣式
+
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          if (activeLeaf) {
+            activeLeaf.classList.remove("flipping");
+            activeLeaf.classList.remove("rev");
+          }
+          void book.offsetWidth; // 動畫值 → 靜態值；settling 仍保住目前頁圖層
+          requestAnimationFrame(function () {
+            settlingLeaves.forEach(function (l) { l.classList.remove("settling"); });
+            animating = false;
+            diagAfterFlip(dir);
+          });
+        });
+      });
     };
     var onEnd = function (e) {
       if (e.target !== activeLeaf) return;                 // 面上的動畫不算

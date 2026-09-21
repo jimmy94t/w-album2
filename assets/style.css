@@ -160,6 +160,11 @@ html,body{
      兩個都做（現在這樣）              殘留 0.00、+0ms ← 跳動完全消失 */
 body:not(.thin) .leaf{ will-change: transform; }
 
+/* GPT 版 Safari 收尾保護：只在翻頁完成後的 2～3 幀提升目前看得到的頁。
+   不能把 will-change 永久套給 thin 裝置的所有葉子，否則 iPhone 會為多張
+   大圖同時保留 GPU 圖層；settling 由 book.js 精準加在當前 1～2 頁。 */
+.leaf.settling{ will-change: transform; }
+
 .leaf.flipping     { animation: leafFwd var(--flip) var(--flip-ease) both; }
 .leaf.flipping.rev { animation-name: leafBack; }   /* 往回翻 */
 @keyframes leafFwd { from{ transform:rotateY(0deg);    } to{ transform:rotateY(-180deg); } }
