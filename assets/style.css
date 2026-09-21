@@ -119,6 +119,23 @@ html,body{
    這個時間差會讓「換面」比「轉到 90 度」早或晚，看起來就是閃一下。
    改成三者都走 animation、共用 var(--flip) 與 var(--flip-ease)，
    時間軸就只有一條。 */
+/* 跨頁模式（電腦、平板）：讓書頁固定待在自己的合成圖層。
+   ------------------------------------------------------------
+   2026-09-21：使用者回報「橫式翻頁完成後左頁會跳一下」。逐幀量測：
+   幾何位置在動畫結束那一刻就定住了，但畫面像素還會再變約 100ms、位移約 1px
+   —— 是瀏覽器把翻頁用的 3D 合成圖層收回、整頁重新繪製造成的，不是版面在動。
+   讓葉子一直保持在圖層上就不會有那一次重繪。
+   ⚠️ 只給 body:not(.thin)。手機（thin）加 will-change 會同時多開好幾個
+      全頁合成層，2026-08 試過，反而更不穩 —— 手機維持原樣。
+   只有顯示中的葉子會成為圖層（其餘 display:none），所以桌機約 7 片、不會爆。
+
+   實測（1400×900，把翻頁放慢到 3s 讓結束點明確，每組跑 4 次取中位）：
+     原本（1px 分隔、無 will-change）  殘留 1.00、結束後 +74ms 才安定
+     只加 will-change                殘留 0.53、+37ms
+     只拿掉 1px 分隔                  殘留 0.51、+40ms
+     兩個都做（現在這樣）              殘留 0.00、+0ms ← 跳動完全消失 */
+body:not(.thin) .leaf{ will-change: transform; }
+
 .leaf.flipping     { animation: leafFwd var(--flip) var(--flip-ease) both; }
 .leaf.flipping.rev { animation-name: leafBack; }   /* 往回翻 */
 @keyframes leafFwd { from{ transform:rotateY(0deg);    } to{ transform:rotateY(-180deg); } }
@@ -130,12 +147,16 @@ html,body{
   overflow:hidden;
   background:var(--紙);
 }
-/* 正反面分開三層保險，都不倚賴 backface-visibility（有些瀏覽器不剔除，
+/* 正反面分兩層保險，都不倚賴 backface-visibility（有些瀏覽器不剔除，
    兩面共平面時會抓鬮，翻頁中就會透出另一面、而且是左右相反的）。
-   ① 兩面之間留 1px 的 z 距離，深度排序不再有歧義
-      （2100px 透視下 1px 只放大 0.05%，看不出來）。 */
-.face.front{ transform: translateZ(1px); }
-.face.back { transform: rotateY(180deg) translateZ(1px); }
+
+   ⚠️ 2026-09-21 移除了原本的第 ① 層「兩面各推 translateZ(1px) 拉開深度」：
+      在 2100px 透視下，z=+1px 與 z=-1px 會讓兩面各自被縮放約 0.05%，
+      於是頁面停下來時的幾何落在非整數像素上，瀏覽器把翻頁用的合成圖層收回、
+      重新繪製時就會位移約 1px —— 就是使用者回報的「橫式翻完左頁會跳一下」。
+      拿掉之後實測殘留為 0（見下方 will-change 那一段）。
+      背面剔除失效的最壞情況已由 ②③ 兩層擋住，實測 0 幀錯面。 */
+.face.back { transform: rotateY(180deg); }
 
 /* ② 靜止時直接把背對我們的那一面收起來。 */
 .leaf:not(.flipping).flipped       .face.front{ visibility:hidden; }
