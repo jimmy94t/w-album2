@@ -96,7 +96,15 @@ html,body{
   width:var(--pw); height:var(--ph);
   transform-origin: left center;
   transform-style: preserve-3d;
-  transition: transform var(--flip) var(--flip-ease);
+  /* ⚠️ 這裡以前有 transition: transform。自從 2026-09-20 翻頁改用 animation
+     （leafFwd/leafBack）驅動之後，這條 transition 已經沒有任何地方用到，
+     卻是「翻完之後才跳一下」的元凶（Safari 專屬、左右翻都會）：
+     動畫一結束、.flipping 一拿掉，transform 從「動畫的最後一幀矩陣」切回
+     靜態的 .flipped 矩陣。Chromium 兩個矩陣算出來完全相同、不會觸發 transition；
+     但 Safari 的矩陣捨入略有差異，就把這個 0.x 像素的差「補間」出來 ——
+     那就是動畫停住之後又滑動一下的跳動。拿掉 transition，切換就是瞬間、
+     沒有補間，肉眼看不出那 <1px 的瞬間修正。（2026-09-21）
+     翻頁動畫本身完全不受影響，它走的是下面的 .leaf.flipping animation。 */
 }
 .leaf.flipped{ transform: rotateY(-180deg); }
 
