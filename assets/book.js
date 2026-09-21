@@ -253,6 +253,18 @@
 
   function total() { return leaves.length; }
 
+  /* 靜止時只讓看得到的頁可見：單頁＝目前頁；跨頁＝目前頁與其左頁。
+     其餘 rest-hidden，避免 Safari 重繪空檔讓後面的頁透出來（回閃）。 */
+  function restVisibility() {
+    leaves.forEach(function (l, i) {
+      var show = mobile ? (i === pos) : (i === pos || i === pos - 1);
+      l.classList.toggle("rest-hidden", !show);
+    });
+  }
+  function clearRestVisibility() {
+    leaves.forEach(function (l) { l.classList.remove("rest-hidden"); });
+  }
+
   function apply(instant) {
     if (instant) {
       leaves.forEach(function (l) { l.style.transition = "none"; });
@@ -299,6 +311,8 @@
       void book.offsetWidth;
       leaves.forEach(function (l) { l.style.transition = ""; });
     }
+    if (leaves.some(function (l) { return l.classList.contains("flipping"); })) clearRestVisibility();
+    else restVisibility();
     updateUI();
   }
 
@@ -359,6 +373,7 @@
         activeLeaf.classList.remove("flipping");
         activeLeaf.classList.remove("rev");
       }
+      restVisibility();   /* 翻完了：把後面看不到的頁重新藏起來 */
     };
     var onEnd = function (e) {
       if (e.target !== activeLeaf) return;                 // 面上的動畫不算
