@@ -374,6 +374,7 @@
         activeLeaf.classList.remove("rev");
       }
       restVisibility();   /* 翻完了：把後面看不到的頁重新藏起來 */
+      diagAfterFlip(dir);
     };
     var onEnd = function (e) {
       if (e.target !== activeLeaf) return;                 // 面上的動畫不算
@@ -595,10 +596,72 @@
     document.addEventListener("pointerdown", 醒著, { passive: true });
   }
 
+  /* ---------------- 診斷模式（網址加 ?diag=1）----------------
+     目的：在使用者真正的裝置（iPhone/iPad Safari）上，於翻頁收尾後逐幀檢查
+     「DOM 認為哪些頁是可見的」。若 DOM 乾淨但眼睛仍看到回閃，
+     就代表問題在瀏覽器的圖層合成，不在這裡的顯示邏輯。 */
+  var DIAG = (網址參數.diag !== undefined && 網址參數.diag !== "0");
+  var diagBox = null, diagLines = [];
+  function diagInit() {
+    diagBox = document.createElement("div");
+    diagBox.style.cssText =
+      "position:fixed;left:0;right:0;bottom:0;z-index:99999;pointer-events:none;" +
+      "background:rgba(0,0,0,.84);color:#3f6;font:11px/1.5 ui-monospace,monospace;" +
+      "padding:6px 8px;white-space:pre-wrap;max-height:42vh;overflow:hidden";
+    document.body.appendChild(diagBox);
+    var src = "";
+    try { src = (document.querySelector('script[src*="book.js"]') || {}).src || ""; } catch (e) {}
+    var v = (src.split("?v=")[1] || "(無版號)");
+    diagLog("診斷模式　版本 " + v);
+    diagLog("模式 " + (mobile ? "單頁" : "跨頁") + (thin ? "/thin" : "") +
+            "　flip " + getComputedStyle(document.body).getPropertyValue("--flip").trim());
+    diagLog("請照平常操作：先往下翻一頁，再往回翻一頁。");
+  }
+  function diagLog(s) {
+    diagLines.push(s);
+    while (diagLines.length > 12) diagLines.shift();
+    if (diagBox) diagBox.textContent = diagLines.join("\n");
+  }
+  /* 翻頁收尾後逐幀取樣：哪些葉子「電腦認為」是看得見的 */
+  function diagAfterFlip(dir) {
+    if (!DIAG) return;
+    var t0 = performance.now(), frames = 0, bad = [], curBlink = [];
+    var expect = mobile ? [pos] : [pos, pos - 1];
+    var label = (dir < 0 ? "往回翻→" : "往下翻→") + (mobile ? (pos + 1) : (pos + " 跨頁"));
+    (function step() {
+      /* 使用者已經開始下一次翻頁 → 先停止取樣（不然會把正常的「重新露出」誤記一筆） */
+      if (animating) {
+        diagLog(label + "　取樣 " + frames + " 幀後開始下一次翻頁" +
+          (bad.length ? "\n  ⚠️ 多出可見: " + bad.slice(0, 5).join(" ") : "\n  ✅ DOM 乾淨") +
+          (curBlink.length ? "\n  ⚠️ 目前頁閃斷: " + curBlink.slice(0, 5).join(" ") : ""));
+        return;
+      }
+      frames++;
+      var extra = [];
+      leaves.forEach(function (l, i) {
+        if (l.style.display === "none") return;
+        if (getComputedStyle(l).visibility !== "visible") return;
+        if (expect.indexOf(i) < 0) extra.push(i);
+      });
+      if (extra.length) bad.push(Math.round(performance.now() - t0) + "ms葉" + extra.join("+"));
+      /* 目前這一頁自己有沒有瞬間變不可見（那也會露出後面） */
+      var cur = leaves[pos];
+      if (cur && getComputedStyle(cur).visibility !== "visible")
+        curBlink.push(Math.round(performance.now() - t0) + "ms");
+      if (performance.now() - t0 < 800) requestAnimationFrame(step);
+      else {
+        diagLog(label + "　收尾後 " + frames + " 幀　應可見葉:" + expect.join(",") +
+          (bad.length ? "\n  ⚠️ 多出可見: " + bad.slice(0, 5).join(" ") : "\n  ✅ DOM 乾淨") +
+          (curBlink.length ? "\n  ⚠️ 目前頁閃斷: " + curBlink.slice(0, 5).join(" ") : ""));
+      }
+    })();
+  }
+
   /* ---------------- 走 ---------------- */
   document.title = C.網頁標題 || "Our Story";
   document.getElementById("intro-title").textContent = (C.封面 && C.封面.主標) || "";
   document.getElementById("intro-en").textContent = (C.封面 && C.封面.英文標) || "";
   document.getElementById("intro-sub").textContent = (C.封面 && C.封面.副標) || "";
   build();
+  if (DIAG) diagInit();
 })();
