@@ -111,14 +111,14 @@ html,body{
 /* 靜止時把「看不到的那些頁」真正藏起來（不是只靠圖層順序蓋住）。
    ------------------------------------------------------------
    2026-09-21：使用者回報手機翻完往回翻，第 2 頁定位後會回閃一格第 3 頁。
-   原因：頁面全疊在同一個位置，靠 z-index 讓最上面那頁露出來；Safari 在翻頁
+   原因：頁面全疊在同一個位置，靠 z-index 讓最上面那頁露出來；手機瀏覽器在翻頁
    收尾重繪最上層的空檔，下面那頁就透出來一格。改成「靜止時只有看得到的
    那一(兩)頁 visibility:visible，其餘 rest-hidden」，後面就沒有東西可以透出來。
    翻頁進行中會由 JS 先清掉 rest-hidden，所以動畫完全不受影響。 */
 /* ⚠️ 這裡一定要用 display:none，不能用 visibility:hidden。
    2026-09-21 實機錄影證據：使用者 iPhone 上，翻頁結束後約 300ms 會閃一格
    「剛離開的那一頁」，但頁碼計數器與診斷都顯示 DOM 狀態完全正確 ——
-   因為 visibility:hidden 的元素**仍然保有自己的合成圖層**，Safari 在某次
+   因為 visibility:hidden 的元素**仍然保有自己的合成圖層**，手機 GPU 在某次
    重繪時把那個圖層畫出來了一格。display:none 會讓它整個離開排版樹，
    沒有 box、沒有圖層，合成器就不可能再把它畫出來。
    用 !important 是因為 apply() 會以 inline style 設 display。 */
@@ -160,10 +160,11 @@ html,body{
      兩個都做（現在這樣）              殘留 0.00、+0ms ← 跳動完全消失 */
 body:not(.thin) .leaf{ will-change: transform; }
 
-/* GPT 版 Safari 收尾保護：只在翻頁完成後的 2～3 幀提升目前看得到的頁。
-   不能把 will-change 永久套給 thin 裝置的所有葉子，否則 iPhone 會為多張
-   大圖同時保留 GPU 圖層；settling 由 book.js 精準加在當前 1～2 頁。 */
-.leaf.settling{ will-change: transform; }
+/* GPT 手機版圖層策略：只有靜止時真正看得到的 1～2 片 current，或翻頁時
+   必要的 2～3 片 flip-visible 進入合成層。current 會保留到下一次翻頁，
+   不會在動畫結束後立刻撤層；其餘四十多片仍是 display:none，不占 GPU。 */
+.leaf.current,
+.leaf.flip-visible{ will-change: transform; }
 
 .leaf.flipping     { animation: leafFwd var(--flip) var(--flip-ease) both; }
 .leaf.flipping.rev { animation-name: leafBack; }   /* 往回翻 */

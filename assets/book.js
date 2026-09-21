@@ -253,16 +253,35 @@
 
   function total() { return leaves.length; }
 
-  /* 靜止時只讓看得到的頁可見：單頁＝目前頁；跨頁＝目前頁與其左頁。
-     其餘 rest-hidden，避免 Safari 重繪空檔讓後面的頁透出來（回閃）。 */
-  function restVisibility() {
+  /* 任何時候都只讓真正需要的葉子留在合成樹裡。
+     ------------------------------------------------------------
+     舊版一開始翻頁就 clearRestVisibility()，直式會同時放出 4 頁、橫式甚至
+     5～6 頁；動畫結束再把它們一起 display:none。手機 GPU 在那次大批圖層
+     增刪時會短暫送出剛離開頁的貼圖，形成「第 2 頁停好後閃一下第 3 頁」。
+
+     靜止：單頁只留目前頁；跨頁只留左右兩頁。
+     翻動：取翻頁前後兩個靜止集合的聯集，所以單頁最多 2 片、跨頁最多 3 片。 */
+  function visibleAt(p) {
+    return mobile ? [p] : [p - 1, p];
+  }
+  function setLeafVisibility(indices, duringFlip) {
+    var keep = {};
+    indices.forEach(function (i) {
+      if (i >= 0 && i < leaves.length) keep[i] = true;
+    });
     leaves.forEach(function (l, i) {
-      var show = mobile ? (i === pos) : (i === pos || i === pos - 1);
+      var show = !!keep[i];
       l.classList.toggle("rest-hidden", !show);
+      l.classList.toggle("flip-visible", duringFlip && show);
+      l.classList.toggle("current", !duringFlip && show);
     });
   }
-  function clearRestVisibility() {
-    leaves.forEach(function (l) { l.classList.remove("rest-hidden"); });
+  function restVisibility() {
+    setLeafVisibility(visibleAt(pos), false);
+  }
+  function prepareFlipVisibility(from, to) {
+    var both = visibleAt(from).concat(visibleAt(to));
+    setLeafVisibility(both, true);
   }
 
   function apply(instant) {
@@ -273,7 +292,7 @@
       var flipped = i < pos;
       /* ⚠️ 正在翻的那一片先不要切到目的地狀態 —— 保持它「出發」時的 flipped，
          由動畫負責演出移動，等 animationend 才在 finish() 切成目的地。
-         否則只要動畫第一格比這裡的 class 變更晚一格（Safari／慢機器很常見），
+         否則只要動畫第一格比這裡的 class 變更晚一格（手機／慢機器很常見），
          畫面就會先閃現目的頁一格：往前翻閃左、往回翻閃右。
          （2026-09-21，第五輪，真正的根因。） */
       if (!l.classList.contains("flipping")) l.classList.toggle("flipped", flipped);
@@ -311,8 +330,9 @@
       void book.offsetWidth;
       leaves.forEach(function (l) { l.style.transition = ""; });
     }
-    if (leaves.some(function (l) { return l.classList.contains("flipping"); })) clearRestVisibility();
-    else restVisibility();
+    /* 翻頁期間的精準可見集合已在 go() 設定；不要再把附近所有頁面放出來。
+       沒有翻頁動畫時（初次建立、跳頁、轉向重建）才套靜止集合。 */
+    if (!leaves.some(function (l) { return l.classList.contains("flipping"); })) restVisibility();
     updateUI();
   }
 
@@ -333,11 +353,10 @@
     var np = pos + dir;
     if (np < 0 || np > limit) return;
     animating = true;
-    if (mobile && dir < 0) {
-      // 先讓上一頁出現，再轉回來
-      var l = leaves[np];
-      if (l) l.style.display = "";
-    }
+    var fromPos = pos;
+    /* 必須在加上 flipping 之前先讓目標頁進入合成樹，動畫第一格才不會空白。
+       只保留翻頁前後真正會看到的 2～3 片葉子，不再整批解除 rest-hidden。 */
+    prepareFlipVisibility(fromPos, np);
     // 這次動作真正在翻的是哪一張葉子（見下方 apply() 的說明）
     var activeLeaf = leaves[dir > 0 ? pos : pos - 1];
     if (activeLeaf) {
@@ -361,7 +380,6 @@
       if (finished) return;
       finished = true;
       if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-      var settlingLeaves = [];
       if (activeLeaf) {
         activeLeaf.removeEventListener("animationend", onEnd);
         var ai = leaves.indexOf(activeLeaf);
@@ -373,28 +391,11 @@
         activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
       }
 
-      /* iPhone Safari 的 WebKit 會把 transform 動畫中的整頁提升成 GPU 合成層。
-         如果在 animationend 的同一幀同時：
-           1. 拿掉 flipping（撤除動畫層）
-           2. 把剛離開的頁 display:none
-         合成器偶爾會在兩種圖層樹交接的空檔，把離開頁的舊貼圖再送出一幀。
-         DOM 狀態與頁碼都正確，但肉眼會看到「第 2 頁停好後又閃一下第 3 頁」。
-
-         收尾改成三段：
-           A. 動畫仍停在最後一幀時，先藏掉離開頁，並只提升真正看得到的頁。
-           B. 讓瀏覽器完整畫過一幀後，才從動畫 transform 交給靜態 transform。
-           C. 再過一幀才撤掉臨時合成層。
-         settling 只套在當前 1～2 頁，不會像所有 thin 葉子都加 will-change
-         那樣耗掉 iPhone 的圖層記憶體。 */
-      leaves.forEach(function (l, i) {
-        var show = mobile ? (i === pos) : (i === pos || i === pos - 1);
-        if (show) {
-          l.classList.add("settling");
-          settlingLeaves.push(l);
-        }
-      });
+      /* 先切成靜止集合：剛離開的頁立即退出合成樹，目標頁則取得 current，
+         並在整段靜止期間持續保留自己的合成層。這不是只撐 2～3 幀的補丁；
+         current 會一直留到下一次翻頁開始，避免手機瀏覽器稍後才撤層時回閃。 */
       restVisibility();
-      void book.offsetWidth;   // 先提交「離開頁已隱藏、目前頁已提升」的樣式
+      void book.offsetWidth;   // 先提交「離開頁已隱藏、目前頁已固定」的樣式
 
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
@@ -402,9 +403,8 @@
             activeLeaf.classList.remove("flipping");
             activeLeaf.classList.remove("rev");
           }
-          void book.offsetWidth; // 動畫值 → 靜態值；settling 仍保住目前頁圖層
+          void book.offsetWidth; // 動畫值 → 靜態值；current 仍保住目前頁圖層
           requestAnimationFrame(function () {
-            settlingLeaves.forEach(function (l) { l.classList.remove("settling"); });
             animating = false;
             diagAfterFlip(dir);
           });
