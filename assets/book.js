@@ -356,10 +356,11 @@
        改成聽 animationend（葉子自己的 leafFwd / leafBack），
        再加一個晚 400ms 的保險計時器，免得事件沒送到就卡住不能翻頁。
        （2026-09-21，使用者回報手機與 iPad 橫放、換過不同瀏覽器都會閃。） */
-    var finished = false;
+    var finished = false, fallbackTimer = null;
     var finish = function () {
       if (finished) return;
       finished = true;
+      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
       animating = false;
       if (activeLeaf) {
         activeLeaf.removeEventListener("animationend", onEnd);
@@ -382,7 +383,10 @@
       finish();
     };
     if (activeLeaf) activeLeaf.addEventListener("animationend", onEnd);
-    setTimeout(finish, flipMs() + 400);                    // 保險，事件沒來也不會卡住
+    /* 保險計時器：animationend 沒送到時才用它收尾。
+       ⚠️ 正常收尾後一定要 clearTimeout —— 否則它會在動畫結束後約 370ms
+       才空轉觸發一次，而實機錄影顯示回閃正好發生在那個時間點。 */
+    fallbackTimer = setTimeout(finish, flipMs() + 400);
   }
 
   function jump(target) {
@@ -639,14 +643,14 @@
       frames++;
       var extra = [];
       leaves.forEach(function (l, i) {
-        if (l.style.display === "none") return;
-        if (getComputedStyle(l).visibility !== "visible") return;
+        var cs = getComputedStyle(l);
+        if (cs.display === "none" || cs.visibility !== "visible") return;
         if (expect.indexOf(i) < 0) extra.push(i);
       });
       if (extra.length) bad.push(Math.round(performance.now() - t0) + "ms葉" + extra.join("+"));
       /* 目前這一頁自己有沒有瞬間變不可見（那也會露出後面） */
       var cur = leaves[pos];
-      if (cur && getComputedStyle(cur).visibility !== "visible")
+      if (cur && (getComputedStyle(cur).display === "none" || getComputedStyle(cur).visibility !== "visible"))
         curBlink.push(Math.round(performance.now() - t0) + "ms");
       if (performance.now() - t0 < 800) requestAnimationFrame(step);
       else {

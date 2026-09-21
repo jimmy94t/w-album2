@@ -115,7 +115,14 @@ html,body{
    收尾重繪最上層的空檔，下面那頁就透出來一格。改成「靜止時只有看得到的
    那一(兩)頁 visibility:visible，其餘 rest-hidden」，後面就沒有東西可以透出來。
    翻頁進行中會由 JS 先清掉 rest-hidden，所以動畫完全不受影響。 */
-.leaf.rest-hidden{ visibility: hidden; }
+/* ⚠️ 這裡一定要用 display:none，不能用 visibility:hidden。
+   2026-09-21 實機錄影證據：使用者 iPhone 上，翻頁結束後約 300ms 會閃一格
+   「剛離開的那一頁」，但頁碼計數器與診斷都顯示 DOM 狀態完全正確 ——
+   因為 visibility:hidden 的元素**仍然保有自己的合成圖層**，Safari 在某次
+   重繪時把那個圖層畫出來了一格。display:none 會讓它整個離開排版樹，
+   沒有 box、沒有圖層，合成器就不可能再把它畫出來。
+   用 !important 是因為 apply() 會以 inline style 設 display。 */
+.leaf.rest-hidden{ display: none !important; }
 
 /* 翻頁中的那一片：只需要延長 transition（其餘由 --flip 決定）。
    ------------------------------------------------------------
