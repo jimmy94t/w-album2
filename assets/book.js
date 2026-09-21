@@ -328,9 +328,22 @@
     }
     pos = np;
     apply(false);
-    setTimeout(function () {
+
+    /* ⚠️ 收尾的時機一定要等「動畫真的跑完」，不能用 setTimeout(flipMs())。
+       JS 把 class 加上去，到瀏覽器真的開始跑動畫，中間會差 20~35ms
+       （裝置越慢差越多，實測手機節流 6 倍時 23ms、桌機 30ms）。
+       用計時器收尾等於在動畫還差幾十毫秒才跑完時就把 class 拔掉 ——
+       旋轉、掃光、正反面切換全部被攔腰切斷，畫面就「跳一下／閃一下」。
+       改成聽 animationend（葉子自己的 leafFwd / leafBack），
+       再加一個晚 400ms 的保險計時器，免得事件沒送到就卡住不能翻頁。
+       （2026-09-21，使用者回報手機與 iPad 橫放、換過不同瀏覽器都會閃。） */
+    var finished = false;
+    var finish = function () {
+      if (finished) return;
+      finished = true;
       animating = false;
       if (activeLeaf) {
+        activeLeaf.removeEventListener("animationend", onEnd);
         activeLeaf.classList.remove("flipping");
         activeLeaf.classList.remove("rev");
         /* ⚠️ 這裡以前是再跑一次 apply()。但翻頁開始時 apply() 已經把
@@ -342,7 +355,14 @@
         var ai = leaves.indexOf(activeLeaf);
         activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
       }
-    }, flipMs());
+    };
+    var onEnd = function (e) {
+      if (e.target !== activeLeaf) return;                 // 面上的動畫不算
+      if (e.animationName !== "leafFwd" && e.animationName !== "leafBack") return;
+      finish();
+    };
+    if (activeLeaf) activeLeaf.addEventListener("animationend", onEnd);
+    setTimeout(finish, flipMs() + 400);                    // 保險，事件沒來也不會卡住
   }
 
   function jump(target) {
