@@ -259,7 +259,12 @@
     }
     leaves.forEach(function (l, i) {
       var flipped = i < pos;
-      l.classList.toggle("flipped", flipped);
+      /* ⚠️ 正在翻的那一片先不要切到目的地狀態 —— 保持它「出發」時的 flipped，
+         由動畫負責演出移動，等 animationend 才在 finish() 切成目的地。
+         否則只要動畫第一格比這裡的 class 變更晚一格（Safari／慢機器很常見），
+         畫面就會先閃現目的頁一格：往前翻閃左、往回翻閃右。
+         （2026-09-21，第五輪，真正的根因。） */
+      if (!l.classList.contains("flipping")) l.classList.toggle("flipped", flipped);
       /* 正在翻的那一頁要浮到最上層，不然會被還沒翻的整疊頁蓋住，
          書愈前面剩的頁愈多、擋得愈嚴重，看起來就像「沒有翻頁特效」。 */
       /* 翻頁中的那一片要浮到所有葉子之上（葉子最高只用到 total()+1，約 26），
@@ -344,16 +349,15 @@
       animating = false;
       if (activeLeaf) {
         activeLeaf.removeEventListener("animationend", onEnd);
+        var ai = leaves.indexOf(activeLeaf);
+        /* 動畫（leafFwd/leafBack，fill:both）此刻正好停在目的地角度，
+           先把靜態的 flipped 切成目的地、再拿掉 flipping ——
+           這樣拿掉 flipping 的瞬間，靜態值已經跟動畫停住的值一致，不會有跳動。
+           z-index 也一起換成靜止值（翻頁中是 500）。 */
+        activeLeaf.classList.toggle("flipped", ai < pos);
+        activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
         activeLeaf.classList.remove("flipping");
         activeLeaf.classList.remove("rev");
-        /* ⚠️ 這裡以前是再跑一次 apply()。但翻頁開始時 apply() 已經把
-           display、書本 class、頁碼都設好了，結束時唯一還要改的只有
-           「剛翻完那一片的 z-index（翻頁中是 500）」。整包重跑會在動畫
-           結束的同一幀更動好幾片葉子的 display 與層級，在 GPU 上等於
-           同時建立/銷毀合成圖層，有些裝置就會閃一下。改成只動這一片。
-           （2026-09-21，使用者回報橫式翻完左頁會閃。） */
-        var ai = leaves.indexOf(activeLeaf);
-        activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
       }
     };
     var onEnd = function (e) {
