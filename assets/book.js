@@ -176,6 +176,8 @@
       currentTurn.nodes.forEach(function (node) { node.remove(); });
       currentTurn = null;
     }
+    book.classList.remove("turning");
+    setBookState(pos);
     animating = false;
   }
 
@@ -284,6 +286,13 @@
     setLeafVisibility(visibleAt(pos));
   }
 
+  function setBookState(p) {
+    if (mobile) return;
+    book.classList.toggle("closed", p === 0);
+    book.classList.toggle("finished", p >= total());
+    book.classList.toggle("opened", p > 0 && p < total());
+  }
+
   function apply(instant) {
     if (instant) {
       leaves.forEach(function (l) { l.style.transition = "none"; });
@@ -310,11 +319,7 @@
         if (thin && nearPC) hydrate(l);   // 手機橫放等小螢幕：範圍內才真的載圖
       }
     });
-    if (!mobile) {
-      book.classList.toggle("closed", pos === 0);
-      book.classList.toggle("finished", pos >= total());
-      book.classList.toggle("opened", pos > 0 && pos < total());
-    }
+    setBookState(pos);
     if (instant) {
       void book.offsetWidth;
       leaves.forEach(function (l) { l.style.transition = ""; });
@@ -345,10 +350,20 @@
     var activeIndex = dir > 0 ? pos : pos - 1;
     visibleAt(pos).concat(visibleAt(np)).forEach(function (i) { hydrate(leaves[i]); });
 
-    /* GPT：真正的書頁永遠是靜態底圖；只讓一份暫時副本旋轉。
-       回翻的目的頁從動畫第一幀就已在底下，不再等 animationend 才變成靜態頁。
-       旋轉、換面、遮住舊頁及陰影由同一個 rAF 時間點計算，沒有 CSS 動畫
-       與 JS 收尾之間的交接。副本移除時，底下仍是同一張目的頁。 */
+    /* GPT：整段過場由副本演出，真正書頁在完成前保持原內容。
+       目的頁副本先放在最底層、來源頁由旋轉副本與遮罩呈現；到終點後才在
+       看不見的底層提交真正頁面，再保留目的頁副本數幀。這樣往前翻不會先
+       換左頁，往回翻也不會在動畫副本移除時重新露出舊頁。 */
+    var staticNodes = [];
+    visibleAt(np).forEach(function (i) {
+      if (i < 0 || i >= leaves.length) return;
+      var node = leaves[i].cloneNode(true);
+      node.className = "leaf turn-static" + (i < np ? " flipped" : "");
+      node.removeAttribute("style");
+      node.style.zIndex = i < np ? i + 1 : total() - i + 1;
+      node.setAttribute("aria-hidden", "true");
+      staticNodes.push(node);
+    });
     var overlay = leaves[activeIndex].cloneNode(true);
     overlay.className = "leaf turn-overlay";
     overlay.removeAttribute("style");
@@ -363,7 +378,11 @@
       cover.setAttribute("aria-hidden", "true");
       cover.appendChild(leaves[coverIndex].querySelector(dir < 0 ? ".front" : ".back").cloneNode(true));
     }
-    var turn = { nodes: cover ? [cover, overlay] : [overlay], frame: 0, timer: 0 };
+    var turn = {
+      nodes: staticNodes.concat(cover ? [cover, overlay] : [overlay]),
+      frame: 0,
+      timer: 0
+    };
     currentTurn = turn;
     var duration = flipMs();
     var curve = getComputedStyle(document.body).getPropertyValue("--flip-ease").match(/[\d.]+/g);
@@ -404,27 +423,44 @@
       begun = true;
       clearTimeout(turn.timer);
       turn.nodes.forEach(function (node) { book.appendChild(node); });
+      book.classList.add("turning");
+      setBookState(np);
       paint(0);
-      pos = np;
-      apply(false);
       var startTime = null;
       function tick(now) {
         if (currentTurn !== turn) return;
         if (startTime === null) startTime = now;
         var elapsed = Math.min(1, (now - startTime) / duration);
         paint(ease(elapsed));
-        if (elapsed < 1) turn.frame = requestAnimationFrame(tick);
-        else turn.frame = requestAnimationFrame(function () {
+        if (elapsed < 1) {
+          turn.frame = requestAnimationFrame(tick);
+          return;
+        }
+
+        /* 真正頁面在暫存畫面遮住時才提交。先讓瀏覽器完整畫出新狀態，
+           再顯示真正頁面，最後才移除內容相同的目的頁副本。 */
+        pos = np;
+        apply(false);
+        turn.frame = requestAnimationFrame(function () {
           if (currentTurn !== turn) return;
-          cancelTurn();
-          diagAfterFlip(dir);
+          book.classList.remove("turning");
+          turn.frame = requestAnimationFrame(function () {
+            if (currentTurn !== turn) return;
+            turn.timer = setTimeout(function () {
+              if (currentTurn !== turn) return;
+              cancelTurn();
+              diagAfterFlip(dir);
+            }, 80);
+          });
         });
       }
       turn.frame = requestAnimationFrame(tick);
     }
     // 副本沿用同一圖片 URL；解碼後才開始。網路失敗也不永久鎖住翻頁。
-    var images = Array.prototype.slice.call(overlay.querySelectorAll("img"));
-    if (cover) images = images.concat(Array.prototype.slice.call(cover.querySelectorAll("img")));
+    var images = [];
+    turn.nodes.forEach(function (node) {
+      images = images.concat(Array.prototype.slice.call(node.querySelectorAll("img")));
+    });
     turn.timer = setTimeout(begin, 1500);
     Promise.all(images.map(function (im) {
       return im.decode ? im.decode().catch(function () {}) : Promise.resolve();

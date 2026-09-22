@@ -102,7 +102,9 @@ html,body{
 .leaf.rest-hidden{ display:none !important; }
 .leaf.current{ will-change:transform; }
 
-/* GPT：動畫副本與真實靜態頁分離；沒有 CSS animation 結束時的狀態交接。 */
+/* GPT：翻動時只顯示完整的暫存場景；真正頁面在底下完成換頁後才重新顯示。 */
+#book.turning > .leaf:not(.turn-overlay):not(.turn-static){ opacity:0; }
+.leaf.turn-static{ pointer-events:none; }
 .leaf.turn-overlay{
   z-index:500; pointer-events:none; will-change:transform;
 }
@@ -112,7 +114,8 @@ html,body{
   z-index:200; pointer-events:none;
 }
 .turn-cover.on-left{ left:0; }
-.turn-cover > .face{ transform:none; visibility:visible; }
+.turn-cover > .face.front,
+.turn-cover > .face.back{ transform:none; visibility:visible; }
 body.mobile .turn-cover{ left:0; }
 .turn-overlay .face::before{ opacity:var(--turn-shade, 0); }
 
