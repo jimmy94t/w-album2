@@ -167,6 +167,17 @@
   var leaves = [];
   var pos = 0;            // 桌機:已翻頁數 / 手機:目前頁索引
   var animating = false;
+  var currentTurn = null;
+
+  function cancelTurn() {
+    if (currentTurn) {
+      cancelAnimationFrame(currentTurn.frame);
+      clearTimeout(currentTurn.timer);
+      currentTurn.nodes.forEach(function (node) { node.remove(); });
+      currentTurn = null;
+    }
+    animating = false;
+  }
 
   /* 手機的網址列一收一放會讓 innerHeight 一直跳，
      所以尺寸一律用這組「穩定值」算，不直接讀即時的 innerHeight。 */
@@ -205,6 +216,7 @@
   }
 
   function build() {
+    cancelTurn();
     mobile = isMobileNow();
     thin = isThinDevice();
     document.body.classList.toggle("mobile", mobile);
@@ -253,18 +265,11 @@
 
   function total() { return leaves.length; }
 
-  /* 任何時候都只讓真正需要的葉子留在合成樹裡。
-     ------------------------------------------------------------
-     舊版一開始翻頁就 clearRestVisibility()，直式會同時放出 4 頁、橫式甚至
-     5～6 頁；動畫結束再把它們一起 display:none。手機 GPU 在那次大批圖層
-     增刪時會短暫送出剛離開頁的貼圖，形成「第 2 頁停好後閃一下第 3 頁」。
-
-     靜止：單頁只留目前頁；跨頁只留左右兩頁。
-     翻動：取翻頁前後兩個靜止集合的聯集，所以單頁最多 2 片、跨頁最多 3 片。 */
+  /* 真實書頁只顯示目的位置的 1～2 片；過場由獨立副本負責。 */
   function visibleAt(p) {
     return mobile ? [p] : [p - 1, p];
   }
-  function setLeafVisibility(indices, duringFlip) {
+  function setLeafVisibility(indices) {
     var keep = {};
     indices.forEach(function (i) {
       if (i >= 0 && i < leaves.length) keep[i] = true;
@@ -272,16 +277,11 @@
     leaves.forEach(function (l, i) {
       var show = !!keep[i];
       l.classList.toggle("rest-hidden", !show);
-      l.classList.toggle("flip-visible", duringFlip && show);
-      l.classList.toggle("current", !duringFlip && show);
+      l.classList.toggle("current", show);
     });
   }
   function restVisibility() {
-    setLeafVisibility(visibleAt(pos), false);
-  }
-  function prepareFlipVisibility(from, to) {
-    var both = visibleAt(from).concat(visibleAt(to));
-    setLeafVisibility(both, true);
+    setLeafVisibility(visibleAt(pos));
   }
 
   function apply(instant) {
@@ -290,21 +290,10 @@
     }
     leaves.forEach(function (l, i) {
       var flipped = i < pos;
-      /* ⚠️ 正在翻的那一片先不要切到目的地狀態 —— 保持它「出發」時的 flipped，
-         由動畫負責演出移動，等 animationend 才在 finish() 切成目的地。
-         否則只要動畫第一格比這裡的 class 變更晚一格（手機／慢機器很常見），
-         畫面就會先閃現目的頁一格：往前翻閃左、往回翻閃右。
-         （2026-09-21，第五輪，真正的根因。） */
-      if (!l.classList.contains("flipping")) l.classList.toggle("flipped", flipped);
-      /* 正在翻的那一頁要浮到最上層，不然會被還沒翻的整疊頁蓋住，
-         書愈前面剩的頁愈多、擋得愈嚴重，看起來就像「沒有翻頁特效」。 */
-      /* 翻頁中的那一片要浮到所有葉子之上（葉子最高只用到 total()+1，約 26），
-         但 **不能碰到 #spine 的層級**。舊值 999 跟 #spine 的 z-index 完全相同，
-         同層時 DOM 順序決定誰在上面，而葉子是在 #spine 之後才 append 的
-         —— 結果一按下翻頁，書縫陰影就被葉子整個蓋掉、直接消失，
-         等葉子轉過 90 度離開中線才又冒出來，看起來就是「陰影閃一下」。
-         改用 500，穩穩高於所有葉子、又低於 #spine。 */
-      l.style.zIndex = l.classList.contains("flipping") ? 500 : (flipped ? i + 1 : total() - i + 1);
+      // 真實頁立即就位；旋轉只發生在不屬於 leaves 的副本上。
+      l.classList.toggle("flipped", flipped);
+      // 靜態頁層級；動畫副本使用獨立的 z-index:500。
+      l.style.zIndex = flipped ? i + 1 : total() - i + 1;
       if (mobile) {
         /* 只留目前這幾頁在畫面上，其餘整片拔掉。
            手機一次撐不住 50 幾個 3D 圖層 + 60 張大圖，會被系統砍掉分頁。 */
@@ -330,9 +319,8 @@
       void book.offsetWidth;
       leaves.forEach(function (l) { l.style.transition = ""; });
     }
-    /* 翻頁期間的精準可見集合已在 go() 設定；不要再把附近所有頁面放出來。
-       沒有翻頁動畫時（初次建立、跳頁、轉向重建）才套靜止集合。 */
-    if (!leaves.some(function (l) { return l.classList.contains("flipping"); })) restVisibility();
+    // 真實頁在整段過場與收尾期間維持同一個目的狀態。
+    restVisibility();
     updateUI();
   }
 
@@ -354,78 +342,97 @@
     if (np < 0 || np > limit) return;
     animating = true;
     var fromPos = pos;
-    /* 必須在加上 flipping 之前先讓目標頁進入合成樹，動畫第一格才不會空白。
-       只保留翻頁前後真正會看到的 2～3 片葉子，不再整批解除 rest-hidden。 */
-    prepareFlipVisibility(fromPos, np);
-    // 這次動作真正在翻的是哪一張葉子（見下方 apply() 的說明）
-    var activeLeaf = leaves[dir > 0 ? pos : pos - 1];
-    if (activeLeaf) {
-      activeLeaf.classList.add("flipping");
-      /* 往回翻時，正反面出現的順序是相反的（見 style.css 的 faceKeep/faceShow）。 */
-      activeLeaf.classList.toggle("rev", dir < 0);
+    var activeIndex = dir > 0 ? pos : pos - 1;
+    visibleAt(pos).concat(visibleAt(np)).forEach(function (i) { hydrate(leaves[i]); });
+
+    /* GPT：真正的書頁永遠是靜態底圖；只讓一份暫時副本旋轉。
+       回翻的目的頁從動畫第一幀就已在底下，不再等 animationend 才變成靜態頁。
+       旋轉、換面、遮住舊頁及陰影由同一個 rAF 時間點計算，沒有 CSS 動畫
+       與 JS 收尾之間的交接。副本移除時，底下仍是同一張目的頁。 */
+    var overlay = leaves[activeIndex].cloneNode(true);
+    overlay.className = "leaf turn-overlay";
+    overlay.removeAttribute("style");
+    overlay.setAttribute("aria-hidden", "true");
+    var front = overlay.querySelector(".front");
+    var back = overlay.querySelector(".back");
+    var cover = null;
+    var coverIndex = dir < 0 ? fromPos : fromPos - 1;
+    if ((dir < 0 || !mobile) && leaves[coverIndex]) {
+      cover = document.createElement("div");
+      cover.className = "turn-cover" + (dir > 0 ? " on-left" : "");
+      cover.setAttribute("aria-hidden", "true");
+      cover.appendChild(leaves[coverIndex].querySelector(dir < 0 ? ".front" : ".back").cloneNode(true));
     }
-    pos = np;
-    apply(false);
-
-    /* ⚠️ 收尾的時機一定要等「動畫真的跑完」，不能用 setTimeout(flipMs())。
-       JS 把 class 加上去，到瀏覽器真的開始跑動畫，中間會差 20~35ms
-       （裝置越慢差越多，實測手機節流 6 倍時 23ms、桌機 30ms）。
-       用計時器收尾等於在動畫還差幾十毫秒才跑完時就把 class 拔掉 ——
-       旋轉、掃光、正反面切換全部被攔腰切斷，畫面就「跳一下／閃一下」。
-       改成聽 animationend（葉子自己的 leafFwd / leafBack），
-       再加一個晚 400ms 的保險計時器，免得事件沒送到就卡住不能翻頁。
-       （2026-09-21，使用者回報手機與 iPad 橫放、換過不同瀏覽器都會閃。） */
-    var finished = false, fallbackTimer = null;
-    var finish = function () {
-      if (finished) return;
-      finished = true;
-      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-      if (activeLeaf) {
-        activeLeaf.removeEventListener("animationend", onEnd);
-        var ai = leaves.indexOf(activeLeaf);
-        /* 動畫（leafFwd/leafBack，fill:both）此刻正好停在目的地角度，
-           先把靜態的 flipped 切成目的地、再拿掉 flipping ——
-           這樣拿掉 flipping 的瞬間，靜態值已經跟動畫停住的值一致，不會有跳動。
-           z-index 也一起換成靜止值（翻頁中是 500）。 */
-        activeLeaf.classList.toggle("flipped", ai < pos);
-        activeLeaf.style.zIndex = (ai < pos) ? (ai + 1) : (total() - ai + 1);
+    var turn = { nodes: cover ? [cover, overlay] : [overlay], frame: 0, timer: 0 };
+    currentTurn = turn;
+    var duration = flipMs();
+    var curve = getComputedStyle(document.body).getPropertyValue("--flip-ease").match(/[\d.]+/g);
+    var points = curve && curve.length === 4 ? curve.map(Number) : [.38, .66, .32, 1];
+    function ease(t) {
+      function bez(s, a, b) { var v = 1 - s; return 3*v*v*s*a + 3*v*s*s*b + s*s*s; }
+      var lo = 0, hi = 1, s = t;
+      for (var n = 0; n < 18; n++) {
+        if (bez(s, points[0], points[2]) < t) lo = s; else hi = s;
+        s = (lo + hi) / 2;
       }
-
-      /* 先切成靜止集合：剛離開的頁立即退出合成樹，目標頁則取得 current，
-         並在整段靜止期間持續保留自己的合成層。這不是只撐 2～3 幀的補丁；
-         current 會一直留到下一次翻頁開始，避免手機瀏覽器稍後才撤層時回閃。 */
-      restVisibility();
-      void book.offsetWidth;   // 先提交「離開頁已隱藏、目前頁已固定」的樣式
-
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          if (activeLeaf) {
-            activeLeaf.classList.remove("flipping");
-            activeLeaf.classList.remove("rev");
-          }
-          void book.offsetWidth; // 動畫值 → 靜態值；current 仍保住目前頁圖層
-          requestAnimationFrame(function () {
-            animating = false;
-            diagAfterFlip(dir);
-          });
+      return t === 0 || t === 1 ? t : bez(s, points[1], points[3]);
+    }
+    function paint(progress) {
+      var angle = dir > 0 ? -180 * progress : -180 * (1 - progress);
+      overlay.style.transform = "rotateY(" + angle + "deg)";
+      front.style.visibility = angle > -90 ? "visible" : "hidden";
+      back.style.visibility = !mobile && angle < -90 ? "visible" : "hidden";
+      overlay.style.setProperty("--turn-shade", Math.abs(Math.sin(angle * Math.PI / 180)));
+      if (cover) {
+        // 落下的紙片已覆蓋的區域，同時從舊頁副本裁掉。到終點前就不再保有
+        // 一張完整舊頁在下面，因此移除旋轉副本不會重新露出來源內容。
+        var amount = 0;
+        if (progress > .5) {
+          var moving = overlay.getBoundingClientRect();
+          var base = cover.getBoundingClientRect();
+          var covered = dir < 0 ? moving.right - base.left : base.right - moving.left;
+          amount = Math.max(0, Math.min(100, covered / base.width * 100));
+        }
+        if (progress === 1) amount = 100;
+        cover.style.clipPath = dir < 0 ? "inset(0 0 0 " + amount + "%)" : "inset(0 " + amount + "% 0 0)";
+        if (progress === 1) cover.style.display = "none";
+      }
+    }
+    var begun = false;
+    function begin() {
+      if (currentTurn !== turn || begun) return;
+      begun = true;
+      clearTimeout(turn.timer);
+      turn.nodes.forEach(function (node) { book.appendChild(node); });
+      paint(0);
+      pos = np;
+      apply(false);
+      var startTime = null;
+      function tick(now) {
+        if (currentTurn !== turn) return;
+        if (startTime === null) startTime = now;
+        var elapsed = Math.min(1, (now - startTime) / duration);
+        paint(ease(elapsed));
+        if (elapsed < 1) turn.frame = requestAnimationFrame(tick);
+        else turn.frame = requestAnimationFrame(function () {
+          if (currentTurn !== turn) return;
+          cancelTurn();
+          diagAfterFlip(dir);
         });
-      });
-    };
-    var onEnd = function (e) {
-      if (e.target !== activeLeaf) return;                 // 面上的動畫不算
-      if (e.animationName !== "leafFwd" && e.animationName !== "leafBack") return;
-      finish();
-    };
-    if (activeLeaf) activeLeaf.addEventListener("animationend", onEnd);
-    /* 保險計時器：animationend 沒送到時才用它收尾。
-       ⚠️ 正常收尾後一定要 clearTimeout —— 否則它會在動畫結束後約 370ms
-       才空轉觸發一次，而實機錄影顯示回閃正好發生在那個時間點。 */
-    fallbackTimer = setTimeout(finish, flipMs() + 400);
+      }
+      turn.frame = requestAnimationFrame(tick);
+    }
+    // 副本沿用同一圖片 URL；解碼後才開始。網路失敗也不永久鎖住翻頁。
+    var images = Array.prototype.slice.call(overlay.querySelectorAll("img"));
+    if (cover) images = images.concat(Array.prototype.slice.call(cover.querySelectorAll("img")));
+    turn.timer = setTimeout(begin, 1500);
+    Promise.all(images.map(function (im) {
+      return im.decode ? im.decode().catch(function () {}) : Promise.resolve();
+    })).then(begin);
   }
 
   function jump(target) {
     if (animating) return;
-    leaves.forEach(function (l) { l.classList.remove("flipping"); l.classList.remove("rev"); });
     pos = mobile ? target : Math.floor(target / 2);
     apply(true);
   }
@@ -636,8 +643,8 @@
 
   /* ---------------- 診斷模式（網址加 ?diag=1）----------------
      目的：在使用者真正的裝置（iPhone/iPad Safari）上，於翻頁收尾後逐幀檢查
-     「DOM 認為哪些頁是可見的」。若 DOM 乾淨但眼睛仍看到回閃，
-     就代表問題在瀏覽器的圖層合成，不在這裡的顯示邏輯。 */
+     「DOM 認為哪些頁是可見的」。DOM 取樣不能證明實際畫面沒有回閃，
+     仍須與實機錄影一起判讀。 */
   var DIAG = (網址參數.diag !== undefined && 網址參數.diag !== "0");
   var diagBox = null, diagLines = [];
   function diagInit() {

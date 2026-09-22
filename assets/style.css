@@ -94,82 +94,27 @@ html,body{
 .leaf{
   position:absolute; top:0; left:50%;
   width:var(--pw); height:var(--ph);
-  transform-origin: left center;
-  transform-style: preserve-3d;
-  /* ⚠️ 這裡以前有 transition: transform。自從 2026-09-20 翻頁改用 animation
-     （leafFwd/leafBack）驅動之後，這條 transition 已經沒有任何地方用到，
-     卻是「翻完之後才跳一下」的元凶（Safari 專屬、左右翻都會）：
-     動畫一結束、.flipping 一拿掉，transform 從「動畫的最後一幀矩陣」切回
-     靜態的 .flipped 矩陣。Chromium 兩個矩陣算出來完全相同、不會觸發 transition；
-     但 Safari 的矩陣捨入略有差異，就把這個 0.x 像素的差「補間」出來 ——
-     那就是動畫停住之後又滑動一下的跳動。拿掉 transition，切換就是瞬間、
-     沒有補間，肉眼看不出那 <1px 的瞬間修正。（2026-09-21）
-     翻頁動畫本身完全不受影響，它走的是下面的 .leaf.flipping animation。 */
+  transform-origin:left center;
+  transform-style:preserve-3d;
+  transform:rotateY(0deg);
 }
-.leaf.flipped{ transform: rotateY(-180deg); }
+.leaf.flipped{ transform:rotateY(-180deg); }
+.leaf.rest-hidden{ display:none !important; }
+.leaf.current{ will-change:transform; }
 
-/* 靜止時把「看不到的那些頁」真正藏起來（不是只靠圖層順序蓋住）。
-   ------------------------------------------------------------
-   2026-09-21：使用者回報手機翻完往回翻，第 2 頁定位後會回閃一格第 3 頁。
-   原因：頁面全疊在同一個位置，靠 z-index 讓最上面那頁露出來；手機瀏覽器在翻頁
-   收尾重繪最上層的空檔，下面那頁就透出來一格。改成「靜止時只有看得到的
-   那一(兩)頁 visibility:visible，其餘 rest-hidden」，後面就沒有東西可以透出來。
-   翻頁進行中會由 JS 先清掉 rest-hidden，所以動畫完全不受影響。 */
-/* ⚠️ 這裡一定要用 display:none，不能用 visibility:hidden。
-   2026-09-21 實機錄影證據：使用者 iPhone 上，翻頁結束後約 300ms 會閃一格
-   「剛離開的那一頁」，但頁碼計數器與診斷都顯示 DOM 狀態完全正確 ——
-   因為 visibility:hidden 的元素**仍然保有自己的合成圖層**，手機 GPU 在某次
-   重繪時把那個圖層畫出來了一格。display:none 會讓它整個離開排版樹，
-   沒有 box、沒有圖層，合成器就不可能再把它畫出來。
-   用 !important 是因為 apply() 會以 inline style 設 display。 */
-.leaf.rest-hidden{ display: none !important; }
-
-/* 翻頁中的那一片：只需要延長 transition（其餘由 --flip 決定）。
-   ------------------------------------------------------------
-   2026-08-21 重做：原本這裡還有一個 leafLift（用 keyframes 動 box-shadow
-   做「書頁被拿起來」的投影）。已經整個拿掉，理由三個：
-   1. box-shadow 是 paint 屬性，而 .leaf 是 transform-style:preserve-3d 的
-      容器 —— 在它身上跑 keyframes 等於每一幀重畫整頁含大圖，是手機翻頁
-      卡頓/閃爍的來源（跟 2026-08-20 那次 filter 是同一類成本）。
-   2. 它本來就已經在手機上被關掉，等於桌機手機長得不一樣，多一條分支。
-   3. 書本的立體感由「靜態的 #spine ＋ .face::after 書縫內陰影」撐住，
-      翻頁的動態感由下面那道角度驅動的掃光負責，這兩層就夠了。
-   結果：翻頁陰影從三條各自寫死的時間軸，收斂成「旋轉」＋「掃光」兩條，
-   而且掃光的 keyframes 是從旋轉曲線反推出來的，不可能再失準。 */
-/* 翻頁中的那一片改用 animation（不是 transition）。
-   ------------------------------------------------------------
-   2026-09-20：transition 與 animation 不保證同一幀開始（實測差到 50ms），
-   而正反面切換、掃光都是 animation —— 在手機只有 .62s 的翻頁裡，
-   這個時間差會讓「換面」比「轉到 90 度」早或晚，看起來就是閃一下。
-   改成三者都走 animation、共用 var(--flip) 與 var(--flip-ease)，
-   時間軸就只有一條。 */
-/* 跨頁模式（電腦、平板）：讓書頁固定待在自己的合成圖層。
-   ------------------------------------------------------------
-   2026-09-21：使用者回報「橫式翻頁完成後左頁會跳一下」。逐幀量測：
-   幾何位置在動畫結束那一刻就定住了，但畫面像素還會再變約 100ms、位移約 1px
-   —— 是瀏覽器把翻頁用的 3D 合成圖層收回、整頁重新繪製造成的，不是版面在動。
-   讓葉子一直保持在圖層上就不會有那一次重繪。
-   ⚠️ 只給 body:not(.thin)。手機（thin）加 will-change 會同時多開好幾個
-      全頁合成層，2026-08 試過，反而更不穩 —— 手機維持原樣。
-   只有顯示中的葉子會成為圖層（其餘 display:none），所以桌機約 7 片、不會爆。
-
-   實測（1400×900，把翻頁放慢到 3s 讓結束點明確，每組跑 4 次取中位）：
-     原本（1px 分隔、無 will-change）  殘留 1.00、結束後 +74ms 才安定
-     只加 will-change                殘留 0.53、+37ms
-     只拿掉 1px 分隔                  殘留 0.51、+40ms
-     兩個都做（現在這樣）              殘留 0.00、+0ms ← 跳動完全消失 */
-body:not(.thin) .leaf{ will-change: transform; }
-
-/* GPT 手機版圖層策略：只有靜止時真正看得到的 1～2 片 current，或翻頁時
-   必要的 2～3 片 flip-visible 進入合成層。current 會保留到下一次翻頁，
-   不會在動畫結束後立刻撤層；其餘四十多片仍是 display:none，不占 GPU。 */
-.leaf.current,
-.leaf.flip-visible{ will-change: transform; }
-
-.leaf.flipping     { animation: leafFwd var(--flip) var(--flip-ease) both; }
-.leaf.flipping.rev { animation-name: leafBack; }   /* 往回翻 */
-@keyframes leafFwd { from{ transform:rotateY(0deg);    } to{ transform:rotateY(-180deg); } }
-@keyframes leafBack{ from{ transform:rotateY(-180deg); } to{ transform:rotateY(0deg);    } }
+/* GPT：動畫副本與真實靜態頁分離；沒有 CSS animation 結束時的狀態交接。 */
+.leaf.turn-overlay{
+  z-index:500; pointer-events:none; will-change:transform;
+}
+.turn-cover{
+  position:absolute; top:0; left:50%;
+  width:var(--pw); height:var(--ph);
+  z-index:200; pointer-events:none;
+}
+.turn-cover.on-left{ left:0; }
+.turn-cover > .face{ transform:none; visibility:visible; }
+body.mobile .turn-cover{ left:0; }
+.turn-overlay .face::before{ opacity:var(--turn-shade, 0); }
 
 .face{
   position:absolute; inset:0;
@@ -177,33 +122,10 @@ body:not(.thin) .leaf{ will-change: transform; }
   overflow:hidden;
   background:var(--紙);
 }
-/* 正反面分兩層保險，都不倚賴 backface-visibility（有些瀏覽器不剔除，
-   兩面共平面時會抓鬮，翻頁中就會透出另一面、而且是左右相反的）。
-
-   ⚠️ 2026-09-21 移除了原本的第 ① 層「兩面各推 translateZ(1px) 拉開深度」：
-      在 2100px 透視下，z=+1px 與 z=-1px 會讓兩面各自被縮放約 0.05%，
-      於是頁面停下來時的幾何落在非整數像素上，瀏覽器把翻頁用的合成圖層收回、
-      重新繪製時就會位移約 1px —— 就是使用者回報的「橫式翻完左頁會跳一下」。
-      拿掉之後實測殘留為 0（見下方 will-change 那一段）。
-      背面剔除失效的最壞情況已由 ②③ 兩層擋住，實測 0 幀錯面。 */
-.face.back { transform: rotateY(180deg); }
-
-/* ② 靜止時直接把背對我們的那一面收起來。 */
-.leaf:not(.flipping).flipped       .face.front{ visibility:hidden; }
-.leaf:not(.flipping):not(.flipped) .face.back { visibility:hidden; }
-
-/* ③ 翻頁進行中依角度換面：切換點＝側轉滿 90 度的那一刻，
-      用 --flip-ease 反推（PC 42.8%、手機 25.2%），時間函數固定 linear。
-      .rev＝往回翻，正反面出現的順序相反。
-      ⚠️ 這四組的先後順序不能調換，靠後寫的權重才壓得過前面。 */
-.leaf.flipping .face.front{ animation: faceKeepPC var(--flip) linear both; }
-.leaf.flipping .face.back { animation: faceShowPC var(--flip) linear both; }
-body.thin .leaf.flipping .face.front{ animation-name: faceKeepM; }
-body.thin .leaf.flipping .face.back { animation-name: faceShowM; }
-body      .leaf.flipping.rev .face.front{ animation-name: faceShowPC; }
-body      .leaf.flipping.rev .face.back { animation-name: faceKeepPC; }
-body.thin .leaf.flipping.rev .face.front{ animation-name: faceShowM; }
-body.thin .leaf.flipping.rev .face.back { animation-name: faceKeepM; }
+.face.back{ transform:rotateY(180deg); }
+/* 真實頁僅顯示固定的一面；動畫副本的正反面由同一個 JS 角度控制。 */
+.leaf.flipped .face.front{ visibility:hidden; }
+.leaf:not(.flipped) .face.back{ visibility:hidden; }
 
 /* 靠書縫那側的內陰影 */
 .face.front::after,
@@ -226,83 +148,8 @@ body.thin .leaf.flipping.rev .face.back { animation-name: faceKeepM; }
    消失時整體亮度變化小很多，比較不會被看成「一大片陰影忽然關掉」。 */
 .face.front::before{ background:linear-gradient(90deg, rgba(25,18,9,.44) 0%, rgba(25,18,9,0) 50%); }
 .face.back::before { background:linear-gradient(270deg, rgba(25,18,9,.44) 0%, rgba(25,18,9,0) 50%); }
-/* 掃光的時間軸與旋轉完全綁在一起：同樣的 --flip，keyframes 由 --flip-ease
-   反推。所以「最暗」一定落在書頁側轉的那一刻、「歸零」一定落在書頁攤平的
-   那一刻 —— 不是調出來的，是算出來的。 */
-.leaf.flipping .face::before{
-  animation: pageShadePC var(--flip) linear both;
-}
-body.thin .leaf.flipping .face::before{ animation-name: pageShadeM; }
-
-/* pageShadePC —— 由 cubic-bezier(0.61,0.04,0.21,1) 反推。
-   每個 %% 對應書頁在那個時間點「真正的角度」，不透明度＝|sin(角度)|：
-   側轉 90 度最暗、攤平 0/180 度剛好是 0。桌機／平板，對應 :root 的 --flip-ease。
-   ⚠️ animation-timing-function 必須是 linear，%% 才等於時間，這組數字才成立。
-   要換加速曲線的話，這組 keyframes 要重新推算，不能用手調的。 */
-@keyframes pageShadePC{
-    0%{ opacity:0.000; }   /*    0.0° */
-    5%{ opacity:0.018; }   /*    1.0° */
-   10%{ opacity:0.053; }   /*    3.0° */
-   15%{ opacity:0.111; }   /*    6.4° */
-   20%{ opacity:0.199; }   /*   11.5° */
-   25%{ opacity:0.327; }   /*   19.1° */
-   30%{ opacity:0.507; }   /*   30.5° */
-   35%{ opacity:0.741; }   /*   47.8° */
-   40%{ opacity:0.958; }   /*   73.3° */
-   45%{ opacity:0.976; }   /*  102.7° */
-   50%{ opacity:0.809; }   /*  126.0° */
-   55%{ opacity:0.612; }   /*  142.2° */
-   60%{ opacity:0.444; }   /*  153.6° */
-   65%{ opacity:0.312; }   /*  161.8° */
-   70%{ opacity:0.211; }   /*  167.8° */
-   75%{ opacity:0.136; }   /*  172.2° */
-   80%{ opacity:0.081; }   /*  175.3° */
-   85%{ opacity:0.043; }   /*  177.5° */
-   90%{ opacity:0.018; }   /*  179.0° */
-   95%{ opacity:0.004; }   /*  179.8° */
-  100%{ opacity:0.000; }   /*  180.0° */
-}
-
-/* pageShadeM —— 由 cubic-bezier(0.38,0.66,0.32,1) 反推。
-   每個 %% 對應書頁在那個時間點「真正的角度」，不透明度＝|sin(角度)|：
-   側轉 90 度最暗、攤平 0/180 度剛好是 0。手機，對應 body.thin 的 --flip-ease。
-   ⚠️ animation-timing-function 必須是 linear，%% 才等於時間，這組數字才成立。
-   要換加速曲線的話，這組 keyframes 要重新推算，不能用手調的。 */
-@keyframes pageShadeM{
-    0%{ opacity:0.000; }   /*    0.0° */
-    5%{ opacity:0.277; }   /*   16.1° */
-   10%{ opacity:0.548; }   /*   33.2° */
-   15%{ opacity:0.781; }   /*   51.3° */
-   20%{ opacity:0.941; }   /*   70.2° */
-   25%{ opacity:1.000; }   /*   89.4° */
-   30%{ opacity:0.953; }   /*  107.7° */
-   35%{ opacity:0.828; }   /*  124.1° */
-   40%{ opacity:0.673; }   /*  137.7° */
-   45%{ opacity:0.524; }   /*  148.4° */
-   50%{ opacity:0.397; }   /*  156.6° */
-   55%{ opacity:0.294; }   /*  162.9° */
-   60%{ opacity:0.212; }   /*  167.7° */
-   65%{ opacity:0.149; }   /*  171.4° */
-   70%{ opacity:0.101; }   /*  174.2° */
-   75%{ opacity:0.065; }   /*  176.2° */
-   80%{ opacity:0.039; }   /*  177.8° */
-   85%{ opacity:0.021; }   /*  178.8° */
-   90%{ opacity:0.009; }   /*  179.5° */
-   95%{ opacity:0.002; }   /*  179.9° */
-  100%{ opacity:0.000; }   /*  180.0° */
-}
-
-/* 手機直式（單頁模式）不要書縫掃光 —— 這是版面問題不是效能問題：
-   單頁翻的時候畫面上根本沒有書縫（#spine 和 .face::after 也早就在手機關掉），
-   留著只會在畫面最左邊多一條忽明忽暗的暗帶。
-   雙頁跨頁（含手機橫式）有書縫，掃光是對的，保留。 */
-body.mobile .face.front::before,
-body.mobile .face.back::before{ display:none; }
-
-/* 手機的翻頁時間與曲線已經統一由上面的 `body.thin{ --flip / --flip-ease }`
-   決定，這裡不再重複寫死。（歷史紀錄：一開始這些規則掛在 body.mobile，
-   結果手機橫式是雙頁跨頁、body.mobile=false，完全沒吃到，症狀跟直式一樣，
-   而電腦因為算力夠看不出來。版面看 mobile、效能看 thin。） */
+/* 單頁模式沒有書縫，不顯示掃光。跨頁的掃光由 JS 依實際角度設定。 */
+body.mobile .face::before{ display:none; }
 
 /* 手機直式的章名：抵銷內距之後還是不夠。實測 390px 手機頁面內容寬 318px，
    「我們的樣子」5 個字用原本的 fs=ph*.093 + 0.20em 字距需要 347px，仍會折行
@@ -332,7 +179,7 @@ body.mobile .face.back::after{ display:none; }
 /* 單頁模式：背面是空白的（手機一頁就是一張照片，沒有另一面要看），
    所以整面藏起來。翻頁前半段看到的就是下面那一頁（還沒翻走的原頁），
    轉過 90 度之後才換成新的一頁 —— 中間不會掃過一張空白紙。
-   ⚠️ 用 !important 是因為要壓過 faceShowM 那組動畫。 */
+   !important 確保動畫副本也不顯示單頁模式的空白背面。 */
 body.mobile .face.back{ visibility:hidden !important; }
 
 /* ============================ 頁面內容 ============================ */
@@ -674,15 +521,3 @@ body.mobile .duopage .cap::before{
   display:block; margin-bottom:.6em;
 }
 body.mobile .duopage .cap.empty{ display:none; }
-
-
-/* ============================================================
-   正反面切換（角度驅動）
-   faceKeep＝這一面先看得到、過 90 度後收起來
-   faceShow＝這一面先收著、過 90 度後才出現
-   百分比是用 --flip-ease 反推 ease(p)=0.5 的那個 p，不能手調。
-   ============================================================ */
-@keyframes faceKeepPC{ 0%,42.7%{visibility:visible} 42.9%,100%{visibility:hidden} }
-@keyframes faceShowPC{ 0%,42.7%{visibility:hidden}  42.9%,100%{visibility:visible} }
-@keyframes faceKeepM { 0%,25.0%{visibility:visible} 25.3%,100%{visibility:hidden} }
-@keyframes faceShowM { 0%,25.0%{visibility:hidden}  25.3%,100%{visibility:visible} }
